@@ -6,10 +6,10 @@ import (
 
 	"testing"
 
-	"github.com/i4de/rulex/common"
+	"github.com/hootrhino/rulex/common"
 
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
 )
 
 //	{
@@ -100,7 +100,7 @@ func Test_RULEX_WITH_S1200PLC(t *testing.T) {
 	engine.Start()
 
 	S1200PLC := typex.NewDevice(typex.S1200PLC,
-		"PLC工站系统", "PLC工站系统", "", map[string]interface{}{
+		"PLC工站系统", "PLC工站系统", map[string]interface{}{
 			"host":          "127.0.0.1",
 			"port":          1800,
 			"rack":          0,
@@ -126,7 +126,8 @@ func Test_RULEX_WITH_S1200PLC(t *testing.T) {
 		},
 	)
 	S1200PLC.UUID = "S1200PLC"
-	if err := engine.LoadDevice(S1200PLC); err != nil {
+	ctx, cancelF := typex.NewCCTX()
+	if err := engine.LoadDeviceWithCtx(S1200PLC, ctx, cancelF); err != nil {
 		t.Error("S1200PLC load failed:", err)
 	}
 	//
@@ -144,7 +145,8 @@ func Test_RULEX_WITH_S1200PLC(t *testing.T) {
 		},
 	)
 	EMQX_BROKER.UUID = "EMQX_BROKER"
-	if err := engine.LoadOutEnd(EMQX_BROKER); err != nil {
+	ctx1, cancelF1 := typex.NewCCTX()
+	if err := engine.LoadOutEndWithCtx(EMQX_BROKER, ctx1, cancelF1); err != nil {
 		t.Error("mqttOutEnd load failed:", err)
 	}
 	// 	// 加载一个规则
@@ -157,9 +159,9 @@ func Test_RULEX_WITH_S1200PLC(t *testing.T) {
 		`function Success()end`,
 		`
 	Actions = {
-		function(data)
+		function(args)
 		    rulexlib:log('EMQX_BROKER: ', data)
-			return true, data
+			return true, args
 		end
 	}`, `function Failed(error) print("[EMQX_BROKER Failed Callback]", error) end`)
 	if err := engine.LoadRule(rule1); err != nil {

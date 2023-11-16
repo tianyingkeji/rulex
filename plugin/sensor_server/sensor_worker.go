@@ -5,8 +5,8 @@ import (
 
 	"time"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
 )
 
 /*
@@ -26,7 +26,6 @@ func (w *SensorWorker) Run() {
 		defer ticker.Stop()
 		buffer := make([]byte, common.T_64KB)
 		for {
-			<-ticker.C
 			select {
 			case <-ctx.Done():
 				{
@@ -58,6 +57,7 @@ func (w *SensorWorker) Run() {
 				return
 			}
 			w.isensor.OnData(buffer[:n])
+			<-ticker.C
 		}
 
 	}(w.Ctx)

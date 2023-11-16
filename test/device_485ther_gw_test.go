@@ -3,11 +3,11 @@ package test
 import (
 	"time"
 
-	httpserver "github.com/i4de/rulex/plugin/http_server"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
 
 	"testing"
 
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/typex"
 )
 
 /*
@@ -19,7 +19,7 @@ func Test_modbus_485_sensor_gateway(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 
-	hh := httpserver.NewHttpApiServer()
+	hh := httpserver.NewHttpApiServer(engine)
 
 	// HttpApiServer loaded default
 	if err := engine.LoadPlugin("plugin.http_server", hh); err != nil {
@@ -27,7 +27,7 @@ func Test_modbus_485_sensor_gateway(t *testing.T) {
 	}
 	// RTU485_THER Inend
 	RTU485Device := typex.NewDevice("RTU485_THER",
-		"温湿度采集器", "温湿度采集器", "", map[string]interface{}{
+		"温湿度采集器", "温湿度采集器", map[string]interface{}{
 			"slaverIds": []uint8{1, 2},
 			"timeout":   5,
 			"frequency": 5,
@@ -56,7 +56,8 @@ func Test_modbus_485_sensor_gateway(t *testing.T) {
 			},
 		})
 	RTU485Device.UUID = "RTU485Device1"
-	if err := engine.LoadDevice(RTU485Device); err != nil {
+	ctx, cancelF := typex.NewCCTX()
+	if err := engine.LoadDeviceWithCtx(RTU485Device, ctx, cancelF); err != nil {
 		t.Error("RTU485Device load failed:", err)
 	}
 	mqttOutEnd := typex.NewOutEnd(
@@ -73,7 +74,8 @@ func Test_modbus_485_sensor_gateway(t *testing.T) {
 		},
 	)
 	mqttOutEnd.UUID = "mqttOutEnd-iothub"
-	if err := engine.LoadOutEnd(mqttOutEnd); err != nil {
+	ctx1, cancelF1 := typex.NewCCTX()
+	if err := engine.LoadOutEndWithCtx(mqttOutEnd, ctx1, cancelF1); err != nil {
 		t.Error("mqttOutEnd load failed:", err)
 	}
 	rule := typex.NewRule(engine,
@@ -84,7 +86,7 @@ func Test_modbus_485_sensor_gateway(t *testing.T) {
 		[]string{RTU485Device.UUID}, // 数据来自网关设备,所以这里需要配置设备ID
 		`function Success() print("[LUA Success Callback]=> OK") end`,
 		`
-Actions = {function(data)
+Actions = {function(args)
 	for tag, v in pairs(rulexlib:J2T(data)) do
 		local ts = rulexlib:TsUnixNano()
 		local value = rulexlib:J2T(v['value'])
@@ -96,9 +98,9 @@ Actions = {function(data)
 			params = value
 		}
 		print('mqttOutEnd-iothub', rulexlib:T2J(jsont))
-		rulexlib:DataToMqtt('mqttOutEnd-iothub', rulexlib:T2J(jsont))
+		data:ToMqtt('mqttOutEnd-iothub', rulexlib:T2J(jsont))
 	end
-	return true, data
+	return true, args
 end}
 `,
 		`function Failed(error) print("[LUA Failed Callback]", error) end`)

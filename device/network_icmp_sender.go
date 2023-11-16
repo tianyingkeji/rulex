@@ -7,18 +7,18 @@ import (
 	"net"
 	"time"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 )
 
 type _IcmpSenderCommonConfig struct {
 	Timeout int `json:"timeout" validate:"required"`
 	// // Weather allow AutoRequest?
-	AutoRequest bool `json:"autoRequest" title:"启动轮询" info:""`
+	AutoRequest bool `json:"autoRequest" title:"启动轮询"`
 	// // Request Frequency, default 5 second
-	Frequency int64 `json:"frequency" validate:"required" title:"采集频率" info:""`
+	Frequency int64 `json:"frequency" validate:"required" title:"采集频率"`
 }
 type _IcmpSenderConfig struct {
 	CommonConfig _IcmpSenderCommonConfig `json:"commonConfig" validate:"required"`
@@ -62,11 +62,9 @@ func (sender *IcmpSender) Init(devId string, configMap map[string]interface{}) e
 	go func(ctx context.Context) {
 		ticker := time.NewTicker(time.Duration(sender.mainConfig.CommonConfig.Frequency) * time.Millisecond)
 		for {
-			<-ticker.C
 			select {
 			case <-ctx.Done():
 				{
-					sender.status = typex.DEV_STOP
 					ticker.Stop()
 					return
 				}
@@ -87,6 +85,8 @@ func (sender *IcmpSender) Init(devId string, configMap map[string]interface{}) e
 				})
 				sender.RuleEngine.WorkDevice(sender.Details(), string(datas))
 			}
+			<-ticker.C
+
 		}
 	}(typex.GCTX)
 	return nil
@@ -118,7 +118,7 @@ func (sender *IcmpSender) Status() typex.DeviceState {
 
 // 停止设备
 func (sender *IcmpSender) Stop() {
-	sender.status = typex.DEV_STOP
+	sender.status = typex.DEV_DOWN
 	sender.CancelCTX()
 }
 

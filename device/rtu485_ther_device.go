@@ -4,16 +4,15 @@ import (
 	"context"
 	"errors"
 	golog "log"
-	"os"
 	"sync"
 	"time"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/core"
-	"github.com/i4de/rulex/driver"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/core"
+	"github.com/hootrhino/rulex/driver"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 	"github.com/mitchellh/mapstructure"
 	modbus "github.com/wwhai/gomodbus"
 )
@@ -59,6 +58,7 @@ func (ther *rtu485_ther) Init(devId string, configMap map[string]interface{}) er
 	for _, register := range ther.mainConfig.Registers {
 		tags = append(tags, register.Tag)
 	}
+
 	if utils.IsListDuplicated(tags) {
 		return errors.New("tag duplicated")
 	}
@@ -78,7 +78,7 @@ func (ther *rtu485_ther) Start(cctx typex.CCTX) error {
 	ther.rtuHandler.StopBits = ther.rtuConfig.StopBits
 	ther.rtuHandler.Timeout = time.Duration(ther.mainConfig.Timeout) * time.Second
 	if core.GlobalConfig.AppDebugMode {
-		ther.rtuHandler.Logger = golog.New(os.Stdout, "485-TEMP-HUMI-DEVICE: ", golog.LstdFlags)
+		ther.rtuHandler.Logger = golog.New(glogger.GLogger.Writer(), "485-TEMP-HUMI-DEVICE: ", golog.LstdFlags)
 	}
 	if err := ther.rtuHandler.Connect(); err != nil {
 		return err
@@ -102,8 +102,10 @@ func (ther *rtu485_ther) Start(cctx typex.CCTX) error {
 			select {
 			case <-ctx.Done():
 				{
-					ther.status = typex.DEV_STOP
 					ticker.Stop()
+					if ther.rtuHandler != nil {
+						ther.rtuHandler.Close()
+					}
 					return
 				}
 			default:
@@ -148,12 +150,8 @@ func (ther *rtu485_ther) Status() typex.DeviceState {
 
 // 停止设备
 func (ther *rtu485_ther) Stop() {
-	ther.status = typex.DEV_STOP
+	ther.status = typex.DEV_DOWN
 	ther.CancelCTX()
-	if ther.rtuHandler != nil {
-		ther.rtuHandler.Close()
-		ther.rtuHandler = nil
-	}
 
 }
 

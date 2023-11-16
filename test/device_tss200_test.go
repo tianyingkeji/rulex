@@ -1,29 +1,28 @@
 package test
 
 import (
-
-	"github.com/i4de/rulex/glogger"
-	httpserver "github.com/i4de/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/glogger"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
 
 	"testing"
 	"time"
 
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/typex"
 )
 
 func Test_TSS200_ReadData(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 
-	hh := httpserver.NewHttpApiServer()
+	hh := httpserver.NewHttpApiServer(engine)
 	// HttpApiServer loaded default
 	if err := engine.LoadPlugin("plugin.http_server", hh); err != nil {
 		glogger.GLogger.Fatal("Rule load failed:", err)
 	}
 
 	tss200 := typex.NewDevice(typex.TSS200V02,
-		"TSS200V02", "TSS200V02", "", map[string]interface{}{
-			"mode":      "RTU",
+		"TSS200V02", "TSS200V02", map[string]interface{}{
+			"mode":      "UART",
 			"timeout":   10,
 			"frequency": 5,
 			"config": map[string]interface{}{
@@ -46,7 +45,8 @@ func Test_TSS200_ReadData(t *testing.T) {
 			},
 		})
 	tss200.UUID = "TSS200V02"
-	if err := engine.LoadDevice(tss200); err != nil {
+	ctx, cancelF := typex.NewCCTX()
+	if err := engine.LoadDeviceWithCtx(tss200, ctx, cancelF); err != nil {
 		t.Log(err)
 	}
 	rule := typex.NewRule(engine,
@@ -58,9 +58,9 @@ func Test_TSS200_ReadData(t *testing.T) {
 		`function Success() print("[LUA Success Callback]=> OK") end`,
 		`
 		Actions = {
-			function(data)
+			function(args)
 				print('data ==> ', data)
-				return true, data
+				return true, args
 			end
 		}`,
 		`function Failed(error) print("[LUA Failed Callback]", error) end`)

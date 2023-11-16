@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wwhai/gomodbus"
+	modbus "github.com/wwhai/gomodbus"
 )
 
 func connect(t *testing.T) {

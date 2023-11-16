@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	httpserver "github.com/i4de/rulex/plugin/http_server"
-	"github.com/i4de/rulex/rulexrpc"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/component/rulexrpc"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/typex"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -23,8 +23,7 @@ func Test_modbus_485_sensor_data_parse(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 
-
-	hh := httpserver.NewHttpApiServer()
+	hh := httpserver.NewHttpApiServer(engine)
 
 	// HttpApiServer loaded default
 	if err := engine.LoadPlugin("plugin.http_server", hh); err != nil {
@@ -34,8 +33,8 @@ func Test_modbus_485_sensor_data_parse(t *testing.T) {
 	grpcInend := typex.NewInEnd("GRPC", "Test_485_sensor", "Test_485_sensor", map[string]interface{}{
 		"port": 2581,
 	})
-
-	if err := engine.LoadInEnd(grpcInend); err != nil {
+	ctx, cancelF := typex.NewCCTX()
+	if err := engine.LoadInEndWithCtx(grpcInend, ctx, cancelF); err != nil {
 		t.Error("grpcInend load failed:", err)
 	}
 	rule := typex.NewRule(engine,
@@ -47,7 +46,7 @@ func Test_modbus_485_sensor_data_parse(t *testing.T) {
 		`function Success() print("[LUA Success Callback]=> OK") end`,
 		`
 		Actions = {
-			function(data)
+			function(args)
 				local table = rulexlib:J2T(data)
 				local value = table['value']
 				local t = rulexlib:HsubToN(value, 5, 8)
@@ -62,7 +61,7 @@ func Test_modbus_485_sensor_data_parse(t *testing.T) {
 					T1 = t1,
 					H2 = h2
 				}))
-				return true, data
+				return true, args
 			end
 		}`,
 		`function Failed(error) print("[LUA Failed Callback]", error) end`)

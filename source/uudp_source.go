@@ -4,10 +4,10 @@ import (
 	"context"
 	"net"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 )
 
 type udpSource struct {
@@ -17,7 +17,7 @@ type udpSource struct {
 	status     typex.SourceState
 }
 
-func NewUdpInEndSource(e typex.RuleX) *udpSource {
+func NewUdpInEndSource(e typex.RuleX) typex.XSource {
 	u := udpSource{}
 	u.mainConfig = common.RULEXUdpConfig{}
 	u.RuleEngine = e
@@ -35,12 +35,14 @@ func (u *udpSource) Start(cctx typex.CCTX) error {
 	}
 	u.status = typex.SOURCE_UP
 	go func(ctx context.Context, u1 *udpSource) {
+		if u.mainConfig.MaxDataLength == 0 {
+			u.mainConfig.MaxDataLength = 4096
+		}
 		data := make([]byte, u.mainConfig.MaxDataLength)
 		for {
 			select {
 			case <-ctx.Done():
 				{
-					u.status = typex.SOURCE_STOP
 					return
 				}
 			default:
@@ -50,14 +52,8 @@ func (u *udpSource) Start(cctx typex.CCTX) error {
 			n, remoteAddr, err := u1.uDPConn.ReadFromUDP(data)
 			if err != nil {
 				glogger.GLogger.Error(err.Error())
-				// return ok
-				_, err = u1.uDPConn.WriteToUDP([]byte("err"), remoteAddr)
-				if err != nil {
-					glogger.GLogger.Error(err)
-				}
 				continue
 			}
-			// glogger.GLogger.Infof("Receive udp data:<%s> %s\n", remoteAddr, data[:n])
 			work, err := u.RuleEngine.WorkInEnd(u.RuleEngine.GetInEnd(u.PointId), string(data[:n]))
 			if !work {
 				glogger.GLogger.Error(err)
@@ -91,41 +87,30 @@ func (u *udpSource) Init(inEndId string, configMap map[string]interface{}) error
 	}
 	return nil
 }
-func (u *udpSource) Enabled() bool {
-	return true
-}
 
 func (u *udpSource) DataModels() []typex.XDataModel {
 	return u.XDataModels
 }
 
-func (u *udpSource) Reload() {
-}
-
-func (u *udpSource) Pause() {
-}
-
 func (u *udpSource) Status() typex.SourceState {
-	return u.status
+	return typex.SOURCE_UP
 }
 
 func (u *udpSource) Stop() {
 	u.status = typex.SOURCE_STOP
-	u.CancelCTX()
+	if u.CancelCTX != nil {
+		u.CancelCTX()
+	}
 	if u.uDPConn != nil {
 		err := u.uDPConn.Close()
 		if err != nil {
 			glogger.GLogger.Error(err)
 		}
-		u.uDPConn = nil
 	}
 
 }
 func (*udpSource) Driver() typex.XExternalDriver {
 	return nil
-}
-func (*udpSource) Configs() *typex.XConfig {
-	return &typex.XConfig{}
 }
 
 // 拓扑

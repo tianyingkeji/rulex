@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	httpserver "github.com/i4de/rulex/plugin/http_server"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
 
-	"github.com/i4de/rulex/core"
-	"github.com/i4de/rulex/engine"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/core"
+	"github.com/hootrhino/rulex/engine"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
 )
 
 func HttpPost(data map[string]interface{}, url string) string {
@@ -65,6 +65,9 @@ func HttpGet(api string) string {
  */
 func RunTestEngine() typex.RuleX {
 	mainConfig := core.InitGlobalConfig("conf/rulex.ini")
+	//----------------------------------------------------------------------------------------------
+	// Init logger
+	//----------------------------------------------------------------------------------------------
 	glogger.StartGLogger(
 		core.GlobalConfig.LogLevel,
 		mainConfig.EnableConsole,
@@ -73,16 +76,13 @@ func RunTestEngine() typex.RuleX {
 		mainConfig.AppId, mainConfig.AppName,
 	)
 	glogger.StartNewRealTimeLogger(core.GlobalConfig.LogLevel)
-	glogger.StartLuaLogger(core.GlobalConfig.LuaLogPath)
 	//----------------------------------------------------------------------------------------------
 	// Init Component
 	//----------------------------------------------------------------------------------------------
 	core.StartStore(core.GlobalConfig.MaxQueueSize)
 	core.SetDebugMode(mainConfig.EnablePProf)
 	core.SetGomaxProcs(mainConfig.GomaxProcs)
-	// engine
-	engine := engine.NewRuleEngine(mainConfig)
-	return engine
+	return engine.InitRuleEngine(mainConfig)
 }
 
 /*
@@ -140,7 +140,7 @@ func StartTestServer(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 	// HttpApiServer loaded default
-	if err := engine.LoadPlugin("plugin.http_server", httpserver.NewHttpApiServer()); err != nil {
+	if err := engine.LoadPlugin("plugin.http_server", httpserver.NewHttpApiServer(engine)); err != nil {
 		t.Fatal(err)
 	}
 }

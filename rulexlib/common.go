@@ -3,14 +3,15 @@ package rulexlib
 import (
 	"errors"
 
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/component/interqueue"
+	"github.com/hootrhino/rulex/typex"
 )
 
 func handleDataFormat(e typex.RuleX, uuid string, incoming string) error {
 	outEnd := e.GetOutEnd(uuid)
 	if outEnd != nil {
-		return e.PushOutQueue(outEnd, incoming)
+		return interqueue.DefaultDataCacheQueue.PushOutQueue(outEnd, incoming)
 	}
 	msg := "target not found:" + uuid
 	glogger.GLogger.Error(msg)

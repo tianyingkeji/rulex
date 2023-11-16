@@ -1,14 +1,14 @@
 package rulexlib
 
 import (
-	lua "github.com/i4de/gopher-lua"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/vendor3rd"
+	lua "github.com/hootrhino/gopher-lua"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/vendor3rd"
 )
 
 /*
 *
-* 读GPIO， lua的函数调用应该是这样: eekit:GPIOGet(pin) -> v,error
+* 读GPIO， lua的函数调用应该是这样: rhinopi:GPIOGet(pin) -> v,error
 *
  */
 func RASPI4_GPIOGet(rx typex.RuleX) func(*lua.LState) int {
@@ -28,7 +28,7 @@ func RASPI4_GPIOGet(rx typex.RuleX) func(*lua.LState) int {
 
 /*
 *
-* 写GPIO， lua的函数调用应该是这样: eekit:GPIOSet(pin, v) -> error
+* 写GPIO， lua的函数调用应该是这样: rhinopi:GPIOSet(pin, v) -> error
 *
  */
 func RASPI4_GPIOSet(rx typex.RuleX) func(*lua.LState) int {

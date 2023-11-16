@@ -1,5 +1,5 @@
 Actions = {
-    function(data)
+    function(args)
         print('Received data from iothub:', data)
         local source = 'iothub-mqtt'
         local device = 'device-uuid'
@@ -51,7 +51,8 @@ Actions = {
                 print('Property Reply error:', err)
                 return false, data
             end
+            print('IotHUB property:', dataT['data'])
         end
-        return true, data
+        return true, args
     end
 }

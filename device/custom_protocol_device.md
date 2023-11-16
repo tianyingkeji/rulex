@@ -4,111 +4,52 @@
 
 ## 配置
 协议分静态协议和动态协议，下面是动态协议示例，一般会有至少一个自定义协议，关键字段是 `deviceConfig` ，下面给出一个 JSON 样例:
-### 静态协议
-```json
-{
-    "name": "GENERIC_PROTOCOL",
-    "type": "GENERIC_PROTOCOL",
-    "description": "GENERIC_PROTOCOL",
-    "config": {
-        "commonConfig": {
-            "transport": "rs485rawserial",
-            "retryTime": 5,
-            "frequency": 100
-        },
-        "uartConfig": {
-            "timeout": 1000,
-            "baudRate": 9600,
-            "dataBits": 8,
-            "parity": "N",
-            "stopBits": 1,
-            "uart": "COM5"
-        },
-        "deviceConfig": {
-            "read": {
-                "type":1,
-                "autoRequest": false,
-                "autoRequestGap": 60,
-                "bufferSize": 9,
-                "checkAlgorithm": "NONECHECK",
-                "onCheckError": "IGNORE",
-                "checksumBegin": 0,
-                "checksumEnd": 6,
-                "checksumValuePos": 6,
-                "description": "read",
-                "name": "read",
-                "rw": 1,
-                "protocol": {
-                    "in": "D400070A0001D8AA55",
-                    "out": "D400070A0001D8AA55"
-                }
-            },
-            "write": {
-                "type":2,
-                "autoRequest": false,
-                "autoRequestGap": 60,
-                "bufferSize": 9,
-                "checkAlgorithm": "NONECHECK",
-                "onCheckError": "IGNORE",
-                "checksumBegin": 0,
-                "checksumEnd": 6,
-                "checksumValuePos": 6,
-                "description": "write",
-                "name": "write",
-                "rw": 2,
-                "protocol": {
-                    "in": "D400070A0001D8AA55",
-                    "out": "D400070A0001D8AA55"
-                }
-            }
-        }
-    }
-}
-```
-### 动态协议
 
-```json
-{
-    "name":"GENERIC_PROTOCOL",
-    "type":"GENERIC_PROTOCOL",
-    "description":"GENERIC_PROTOCOL",
-    "config":{
-        "commonConfig":{
-            "transport":"rs485rawserial",
-            "retryTime":5,
-            "frequency":100
-        },
-        "uartConfig":{
-            "timeout":1000,
-            "baudRate":9600,
-            "dataBits":8,
-            "parity":"N",
-            "stopBits":1,
-            "uart":"COM5"
-        },
-        "deviceConfig":{
-            "write":{
-                "type":2,
-                "autoRequest":false,
-                "autoRequestGap":60,
-                "bufferSize":9,
-                "checkAlgorithm":"NONECHECK",
-                "onCheckError":"IGNORE",
-                "checksumBegin":0,
-                "checksumEnd":6,
-                "checksumValuePos":6,
-                "description":"write",
-                "name":"write",
-                "rw":2,
-                "protocol":{
-                    "in":"",
-                    "out":""
-                }
+### 动态协议
+动态协议有2种，分别是串口和TCP，用`transport`字段区分。
+- 当 `transport`是 `rawserial` 的时候表示串口
+    ```json
+    {
+        "name":"GENERIC_PROTOCOL",
+        "type":"GENERIC_PROTOCOL",
+        "description":"GENERIC_PROTOCOL",
+        "config":{
+            "commonConfig":{
+                "transport":"UART",
+                "retryTime":5,
+                "frequency":100
+            },
+            "uartConfig":{
+                "timeout":1000,
+                "baudRate":9600,
+                "dataBits":8,
+                "parity":"N",
+                "stopBits":1,
+                "uart":"COM5"
             }
         }
     }
-}
-```
+    ```
+- 当 `transport`是 `rawtcp` 的时候表示自定义TCP
+    ```json
+    {
+        "name":"GENERIC_PROTOCOL",
+        "type":"GENERIC_PROTOCOL",
+        "description":"GENERIC_PROTOCOL",
+        "config":{
+            "commonConfig":{
+                "transport":"TCP",
+                "retryTime":5,
+                "frequency":100
+            },
+            "hostConfig":{
+                "host": "192.168.1.1",
+                "port": 4455,
+            }
+        }
+    }
+    ```
+
 
 ## 字段：
 
@@ -116,34 +57,36 @@
 - type: 1-静态；2-动态, 在动态协议里面必须为2
 - description: 协议的一些备注信息
 - transport: 传输形式，目前支持 `rawtcp`, `rawudp`, `rs485rawserial`, `rs485rawtcp`
-- algorithm：校验算法，支持 `XOR`,`CRC16`,`NONECHECK`, 默认为不认证，即`NONECHECK`
-- rw: 读写权限，有3个值: 1:RO 2:WO 3:RW
-- bufferSize: 期望读取字节数，这个比较重要，最好是经过精确计算
-- checksumBegin: 从哪个位置开始校验
-- checksumEnd: 从哪里结束校验
-- checksumValuePos: 校验对比值的位置
-- protocol: 协议本体
-    - in: 请求参数, 用大写十六进制表示法，否则会解析失败, 例如：FFFFFF014CB2AA55
-    - out: 返回参数, 用大写十六进制表示法，否则会解析失败, 例如：FFFFFF014CB2AA55， 这个参数一般不参与业务，主要用来返回取值。
-
-实际上观察一下样例 JSON 就知道怎么配置了。
-
-## 设备数据读取
-```lua
--- get_uuid 就是配置的读指令
-local binary1, err1 = applib:ReadDevice("ID12345", "get_uuid")
-if err1 ~= nil then
-    print(err1)
-end
+## 数据
+返回的数据有如下格式:
+```json
+{
+  "in":"0001020304ABCDEF",
+  "out":"11220ABCDEF"
+}
 ```
-## 设备数据写入
+字段说明
+- in: 请求的报文
+- out: 返回的结果
+
+> 注意：均为十六进制格式
+
+## 设备数据处理
 ```lua
--- ctrl1 就是配置的写指令
--- 参数：id, 指令，参数
-local binary1, err1 = applib:WriteDevice("ID12345", "ctrl1", "args")
-if err1 ~= nil then
-    print(err1)
+-- 动态协议请求
+AppNAME = 'Read'
+AppVERSION = '0.0.1'
+function Main(arg)
+    local Id = 'DEVICE056b93901b3b4a5b9a3d69d14dc1139f'
+    while true do
+        local result, err = applib:CtrlDevice(Id, "010300000002C40B")
+        --result {"in":"010300000002C40B","out":"010304000100022a32"}
+        print("CtrlDevice result=>", result)
+        time:Sleep(60)
+    end
+    return 0
 end
+
 ```
 注意:**数据在总线形式下并发读写是有独占机制，这里加了锁来处理**
 ## 常用函数
@@ -159,13 +102,13 @@ end
      local b, err = hex:Hexs2Bytes('FFFFFF014CB2AA55')
      -- b 是一个table: {0 = 0, 1 = 1}
   ```
-- eekit:GPIOSet: 控制GPIO
+- rhinopi:GPIOSet: 控制GPIO
   ```lua
-     local err = eekit:GPIOSet(6, 1)
+     local err = rhinopi:GPIOSet(6, 1)
   ```
-- eekit:GPIOGet 16进制字符串转成字节
+- rhinopi:GPIOGet 16进制字符串转成字节
   ```lua
-     local value, err = eekit:GPIOGet(6)
+     local value, err = rhinopi:GPIOGet(6)
      -- value 的值为 0 或者 1
   ```
 - applib:MatchHex 提取十六进制
@@ -219,3 +162,89 @@ end
 		local V, err = rulexlib:CDAB("ABCDEF12")
     -- V = CDAB12EF
   ```
+
+## 自定义TCP示例
+### 设备模拟器
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+)
+
+func StartCustomTCPServer() {
+	listener, err := net.Listen("tcp", ":3399")
+	if err != nil {
+		fmt.Println("Error listening:", err)
+		return
+	}
+	fmt.Println("listening:", listener.Addr().String())
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println("Error accepting:", err)
+			continue
+		}
+		go handleConnection(conn)
+	}
+}
+
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+	data := make([]byte, 10)
+	for {
+		n, err := conn.Read(data)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println("Received Request From Custom TCP:", data[:n])
+		if n > 0 {
+			if data[0] == 1 {
+				conn.Write([]byte{0x01})
+			}
+			if data[0] == 2 {
+				conn.Write([]byte{0x02, 0x03, 0x04})
+			}
+			if data[0] == 3 {
+				conn.Write([]byte{0x0A, 0x0B, 0x0C, 0x0D})
+			}
+			if data[0] == 4 {
+				conn.Write([]byte{0x11, 0x22, 0x33, 0x44, 0x55})
+			}
+			if data[0] == 5 {
+				conn.Write([]byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF})
+			}
+		}
+	}
+
+}
+
+func main() {
+	StartCustomTCPServer()
+}
+
+```
+### RULEX APP Demo
+```lua
+AppNAME = "Test1"
+AppVERSION = "1.0.0"
+AppDESCRIPTION = ""
+--
+-- Main
+--
+
+function Main(arg)
+    while true do
+        for i = 1, 5, 1 do
+            local result, err = applib:CtrlDevice('uuid', "0" .. i)
+            print("|*** CtrlDevice [0x01] result=>", result, err)
+            time:Sleep(1000)
+        end
+    end
+    return 0
+end
+
+```

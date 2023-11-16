@@ -1,18 +1,19 @@
 package utils
 
 import (
-	_ "embed"
 	"fmt"
+	"runtime"
+	"strconv"
+	"strings"
 )
 
-//go:embed banner.b
-var banner string
-
-//
-// show banner
-//
-func ShowBanner() {
-
-	fmt.Println("\n", banner)
-
+func GoID() int {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	idField := strings.Fields(strings.TrimPrefix(string(buf[:n]), "goroutine "))[0]
+	id, err := strconv.Atoi(idField)
+	if err != nil {
+		panic(fmt.Sprintf("cannot get goroutine id: %v", err))
+	}
+	return id
 }

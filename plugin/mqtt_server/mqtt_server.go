@@ -2,19 +2,16 @@ package mqttserver
 
 import (
 	"fmt"
+	"sync"
 
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
-	mqttServer "github.com/mochi-co/mqtt/server"
-	"github.com/mochi-co/mqtt/server/events"
-	"github.com/mochi-co/mqtt/server/listeners"
-	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
+	"github.com/mochi-co/mqtt/v2"
+	"github.com/mochi-co/mqtt/v2/listeners"
+	"github.com/mochi-co/mqtt/v2/packets"
+	"github.com/rs/zerolog"
 	"gopkg.in/ini.v1"
-)
-
-const (
-	defaultTransport string = "tcp"
 )
 
 type _serverConfig struct {
@@ -22,18 +19,27 @@ type _serverConfig struct {
 	Host   string `ini:"host"`
 	Port   int    `ini:"port"`
 }
+type _topic struct {
+	Topic string
+}
 type MqttServer struct {
 	Enable     bool
 	Host       string
 	Port       int
-	mqttServer *mqttServer.Server
-	clients    map[string]*events.Client
+	mqttServer *mqtt.Server
+	clients    map[string]*mqtt.Client
+	topics     map[string][]_topic // Topic 订阅表
 	ruleEngine typex.RuleX
+	uuid       string
 }
 
 func NewMqttServer() typex.XPlugin {
 	return &MqttServer{
-		clients: map[string]*events.Client{},
+		Host:    "127.0.0.1",
+		Port:    1884,
+		clients: map[string]*mqtt.Client{},
+		topics:  map[string][]_topic{},
+		uuid:    "RULEX-MqttServer",
 	}
 }
 
@@ -49,33 +55,22 @@ func (s *MqttServer) Init(config *ini.Section) error {
 
 func (s *MqttServer) Start(r typex.RuleX) error {
 	s.ruleEngine = r
-	server := mqttServer.New()
-	tcpPort := listeners.NewTCP(defaultTransport, fmt.Sprintf(":%v", s.Port))
+	zlog := zerolog.New(glogger.GLogger.Writer()).With().Logger()
 
-	if err := server.AddListener(tcpPort, &listeners.Config{
-		Auth: &auth.Allow{},
-	}); err != nil {
+	server := mqtt.New(&mqtt.Options{Logger: &zlog})
+	tcp := listeners.NewTCP("node1", fmt.Sprintf("%v:%v", s.Host, s.Port), nil)
+	if err := server.AddListener(tcp); err != nil {
 		return err
 	}
 	if err := server.Serve(); err != nil {
 		return err
 	}
-
+	//
+	// 本地服务器
+	//
 	s.mqttServer = server
-	s.mqttServer.Events.OnConnect = func(client events.Client, packet events.Packet) {
-		s.clients[client.ID] = &client
-		glogger.GLogger.Debugf("Client connected:%s", client.ID)
-	}
-	s.mqttServer.Events.OnDisconnect = func(client events.Client, err error) {
-		if s.clients[client.ID] != nil {
-			delete(s.clients, client.ID)
-			glogger.GLogger.Debugf("Client disconnected:%s", client.ID)
-		}
-	}
-	s.mqttServer.Events.OnMessage = func(c events.Client, p events.Packet) (events.Packet, error) {
-
-		return p, nil
-	}
+	server.AddHook(&ahooks{s: s}, nil)
+	server.AddHook(&mhooks{s: s, locker: sync.Mutex{}}, nil)
 	glogger.GLogger.Infof("MqttServer start at [%s:%v] successfully", s.Host, s.Port)
 	return nil
 }
@@ -91,21 +86,93 @@ func (s *MqttServer) Stop() error {
 
 func (s *MqttServer) PluginMetaInfo() typex.XPluginMetaInfo {
 	return typex.XPluginMetaInfo{
+		UUID:     s.uuid,
 		Name:     "Light Weight MqttServer",
-		Version:  "0.0.1",
-		Homepage: "www.github.com/i4de/rulex",
-		HelpLink: "www.github.com/i4de/rulex",
-		Author:   "wwhai",
-		Email:    "cnwwhai@gmail.com",
+		Version:  "v2.0.0",
+		Homepage: "https://github.com/lion-brave",
+		HelpLink: "https://github.com/lion-brave",
+		Author:   "liyong",
+		Email:    "liyong@gmail.com",
 		License:  "MIT",
 	}
 }
 
 /*
 *
-* 服务调用接口
+* 认证器
 *
  */
-func (cs *MqttServer) Service(arg typex.ServiceArg) error {
-	return nil
+
+type mhooks struct {
+	mqtt.HookBase
+	s      *MqttServer
+	locker sync.Mutex
+}
+
+func (h *mhooks) ID() string {
+	return "events-hooks"
+}
+
+func (h *mhooks) Provides(b byte) bool {
+	return true
+}
+
+func (h *mhooks) OnConnect(client *mqtt.Client, pk packets.Packet) {
+	h.locker.Lock()
+	h.s.clients[client.ID] = client
+	h.locker.Unlock()
+	glogger.GLogger.Debugf("client OnConnect:[%v] %v", client.ID, string(client.Properties.Username))
+
+}
+
+func (h *mhooks) OnDisconnect(client *mqtt.Client, err error, expire bool) {
+	if h.s.clients[client.ID] != nil {
+		h.locker.Lock()
+		delete(h.s.clients, client.ID)
+		delete(h.s.topics, client.ID)
+		h.locker.Unlock()
+		glogger.GLogger.Debugf("Client disconnected:%s", client.ID)
+	}
+}
+
+func (h *mhooks) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
+	glogger.GLogger.Debugf("client OnPublish:[%v]=%v", pk.TopicName, string(pk.Payload))
+	return pk, nil
+}
+
+// ahooks is an authentication hook which allows connection access
+// for all users and read and write access to all topics.
+type ahooks struct {
+	mqtt.HookBase
+	s *MqttServer
+}
+
+// ID returns the ID of the hook.
+func (h *ahooks) ID() string {
+	return "auth-hooks"
+}
+
+// Provides indicates which hook methods this hook provides.
+func (h *ahooks) Provides(b byte) bool {
+	return true
+}
+
+// OnConnectAuthenticate returns true/allowed for all requests.
+func (h *ahooks) OnConnectAuthenticate(client *mqtt.Client, pk packets.Packet) bool {
+	glogger.GLogger.Debugf("OnAuthenticate:[%v],[%v],[%v]",
+		client.ID, string(client.Properties.Username), string(pk.Connect.Password))
+	return true
+}
+
+// OnACLCheck returns true/allowed for all checks.
+func (h *ahooks) OnACLCheck(client *mqtt.Client, topic string, write bool) bool {
+	glogger.GLogger.Debugf("OnACLCheck:[%v],[%v],[%v]",
+		client.ID, string(client.Properties.Username), topic)
+	_, ok := h.s.topics[client.ID]
+	if !ok {
+		h.s.topics[client.ID] = []_topic{{Topic: topic}}
+	} else {
+		h.s.topics[client.ID] = append(h.s.topics[client.ID], _topic{Topic: topic})
+	}
+	return true
 }

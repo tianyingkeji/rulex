@@ -1,26 +1,32 @@
 #! /bin/bash
 set -e
-
-RESPOSITORY="https://github.com/i4de"
+APP=rulex
+RESPOSITORY="https://github.com/hootrhino"
 
 #
 create_pkg() {
-    VERSION=$(git describe --tags --always --abbrev=0)
-    echo "Create package: ${rulex-$1-${VERSION}}"
-    if [ "$1" == "x64windows" ]; then
-        zip -r _release/rulex-$1-${VERSION}.zip \
-        ./rulex.exe \
-        ./conf/rulex.ini
-        rm -rf ./rulex.exe
-    else
-        zip -r _release/rulex-$1-${VERSION}.zip \
-        ./rulex-* \
-        ./script/crulex.sh \
-        ./conf/rulex.ini
-        rm -rf ./rulex-*
-    fi
+    local target=$1
+    local version="$(git describe --tags $(git rev-list --tags --max-count=1))"
+    local release_dir="_release"
+    local pkg_name="${APP}-$target-$version.zip"
+    local common_files="./LICENSE ./conf/${APP}.ini ./md5.sum"
+    local files_to_include="./${APP} $common_files"
+    local files_to_include_exe="./${APP}.exe $common_files"
 
+    if [[ "$target" != "windows" ]]; then
+        files_to_include="$files_to_include ./script/*.sh"
+        mv ./${APP}-$target ./${APP}
+        chmod +x ./${APP}
+        calculate_and_save_md5 ./${APP}
+    else
+        files_to_include="$files_to_include_exe"
+        mv ./${APP}-$target.exe ./${APP}.exe
+        calculate_and_save_md5 ./${APP}.exe
+    fi
+    echo "Create package: $pkg_name"
+    zip -j "$release_dir/$pkg_name" $files_to_include
 }
+
 
 #
 make_zip() {
@@ -33,11 +39,9 @@ make_zip() {
 
 }
 
-#
-build_x64windows() {
+build_windows() {
     make windows
 }
-
 build_x64linux() {
     make x64linux
 }
@@ -59,7 +63,7 @@ build_mips32linux() {
 }
 #------------------------------------------
 cross_compile() {
-    ARCHS=("x64windows" "x64linux" "arm64linux" "arm32linux")
+    ARCHS=("windows" "x64linux" "arm64linux" "arm32linux")
     if [ ! -d "./_release/" ]; then
         mkdir -p ./_release/
     else
@@ -68,9 +72,8 @@ cross_compile() {
     fi
     for arch in ${ARCHS[@]}; do
         echo -e "\033[34m [★] Compile target =>\033[43;34m ["$arch"]. \033[0m"
-        if [[ "${arch}" == "x64windows" ]]; then
-            # sudo apt install gcc-mingw-w64-x86-64 -y
-            build_x64windows $arch
+        if [[ "${arch}" == "windows" ]]; then
+            build_windows $arch
             make_zip $arch
             echo -e "\033[33m [√] Compile target => ["$arch"] Ok. \033[0m"
         fi
@@ -78,7 +81,6 @@ cross_compile() {
             build_x86linux $arch
             make_zip $arch
             echo -e "\033[33m [√] Compile target => ["$arch"] Ok. \033[0m"
-
         fi
         if [[ "${arch}" == "x64linux" ]]; then
             build_x64linux $arch
@@ -101,27 +103,58 @@ cross_compile() {
         fi
     done
 }
-
+# 计算md5
+calculate_and_save_md5() {
+    if [ $# -ne 1 ]; then
+        echo "Usage: $0 <file_path>"
+        exit 1
+    fi
+    local file_path="$1"
+    local md5_hash
+    if [ ! -f "$file_path" ]; then
+        echo "File not found: $file_path"
+        return 1
+    fi
+    md5_hash=$(md5sum "$file_path" | awk '{print $1}')
+    echo -n "$md5_hash" > md5.sum
+}
 #
 # fetch dashboard
 #
 fetch_dashboard() {
-    VERSION=$(git describe --tags --always --abbrev=0)
-    wget -q --show-progress ${RESPOSITORY}/rulex-dashboard/releases/download/${VERSION}/${VERSION}.zip
-    unzip -q ${VERSION}.zip
-    cp -r ./dist/* ./plugin/http_server/www
+    local www_zip="./www.zip"
+    local http_server_dir="./plugin/http_server/www"
+
+    # 检查文件是否存在
+    if [ -f "$www_zip" ]; then
+        echo -e "\033[44;32m [√] File www.zip already downloaded \033[0m"
+        unzip -q "$www_zip" -d "$http_server_dir"
+    else
+        VERSION="$(git describe --tags $(git rev-list --tags --max-count=1))"
+        local URL="${RESPOSITORY}/hootrhino-eekit-web/releases/download/${VERSION}/www.zip"
+        echo -e "\033[41;37m [*] Fetch www.zip from: ${URL}\033[0m"
+        # 发送HEAD请求来检查URL是否存在
+        response=$(curl -s --head -w %{http_code} "$URL" -o /dev/null)
+
+        if [ "$response" = "200" ]; then
+            echo -e "\033[40;32m [*] Unzip www.zip to:${http_server_dir} \033[0m"
+            wget -q --show-progress "$URL"
+            unzip -q "$www_zip" -d "$http_server_dir"
+        else
+            echo -e "\033[41;30m [x] Error with http code 404, check if ${URL} exists \033[0m"
+            exit 1
+        fi
+    fi
 }
+
 #
 # gen_changelog
 #
+
 gen_changelog() {
-    PreviewVersion=$(git describe --tags --abbrev=0 $(git rev-list --tags --skip=1 --max-count=1))
-    CurrentVersion=$(git describe --tags --abbrev=0)
-    echo "----------------------------------------------------------------"
-    echo -e "\033[34m [★] Change log between\033[44;34m ["${PreviewVersion}"] <--> [${CurrentVersion}]. \033[0m"
-    echo "----------------------------------------------------------------"
-    ChangeLog=$(git log ${PreviewVersion}..${CurrentVersion} --oneline --decorate --color)
-    printf "${ChangeLog}\n"
+    echo -e "[.]Version Change log:"
+    log=$(git log --oneline --pretty=format:"\033[0;31m[#]\033[0m%s\n" $(git describe --abbrev=0 --tags).. | cat)
+    echo -e $log
 }
 
 #
@@ -140,7 +173,7 @@ init_env() {
 # 检查是否安装了这些软件
 #
 check_cmd() {
-    DEPS=("git" "jq" "gcc" "make")
+    DEPS=("bash" "git" "jq" "gcc" "make" "x86_64-w64-mingw32-gcc")
     for dep in ${DEPS[@]}; do
         echo -e "\033[34m [*] Check dependcy command: $dep. \033[0m"
         if ! [ -x "$(command -v $dep)" ]; then

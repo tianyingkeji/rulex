@@ -1,8 +1,8 @@
 package device
 
 import (
-	"github.com/i4de/rulex/core"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/core"
+	"github.com/hootrhino/rulex/typex"
 )
 
 var DM typex.DeviceRegistry
@@ -19,6 +19,7 @@ func LoadDt() {
 	DM.Register(typex.YK08_RELAY, &typex.XConfig{})
 	DM.Register(typex.S1200PLC, &typex.XConfig{})
 	DM.Register(typex.GENERIC_MODBUS, &typex.XConfig{})
+	DM.Register(typex.GENERIC_MODBUS_POINT_EXCEL, &typex.XConfig{})
 	DM.Register(typex.GENERIC_UART, &typex.XConfig{})
 	DM.Register(typex.GENERIC_SNMP, &typex.XConfig{})
 	DM.Register(typex.USER_G776, &typex.XConfig{})

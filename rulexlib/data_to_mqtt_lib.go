@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 
-	lua "github.com/i4de/gopher-lua"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
+	lua "github.com/hootrhino/gopher-lua"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/component/interqueue"
+	"github.com/hootrhino/rulex/typex"
 )
 
 func DataToMqtt(rx typex.RuleX) func(*lua.LState) int {
@@ -53,7 +54,7 @@ func handleMqttFormat(e typex.RuleX,
 		bytes, _ := json.Marshal(mqtt_data{
 			Topic: topic, Payload: incoming,
 		})
-		return e.PushOutQueue(outEnd, string(bytes))
+		return interqueue.DefaultDataCacheQueue.PushOutQueue(outEnd, string(bytes))
 	}
 	msg := "target not found:" + uuid
 	glogger.GLogger.Error(msg)

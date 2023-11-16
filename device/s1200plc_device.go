@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/driver"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/driver"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 	"github.com/robinson/gos7"
 )
 
@@ -86,12 +86,13 @@ func (s1200 *s1200plc) Start(cctx typex.CCTX) error {
 		dataBuffer := make([]byte, common.T_4KB)
 		s1200.driver.Read([]byte{}, dataBuffer) //清理缓存
 		for {
-			<-ticker.C
 			select {
 			case <-ctx.Done():
 				{
-					s1200.status = typex.DEV_STOP
 					ticker.Stop()
+					if s1200.driver != nil {
+						s1200.driver.Stop()
+					}
 					return
 				}
 			default:
@@ -116,6 +117,7 @@ func (s1200 *s1200plc) Start(cctx typex.CCTX) error {
 			if !ok {
 				glogger.GLogger.Error(err)
 			}
+			<-ticker.C
 		}
 
 	}(cctx.Ctx)
@@ -160,11 +162,9 @@ func (s1200 *s1200plc) Status() typex.DeviceState {
 
 // 停止设备
 func (s1200 *s1200plc) Stop() {
-	s1200.status = typex.DEV_STOP
+	s1200.status = typex.DEV_DOWN
 	s1200.CancelCTX()
-	if s1200.driver != nil {
-		s1200.driver = nil
-	}
+
 }
 
 // 设备属性，是一系列属性描述

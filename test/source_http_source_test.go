@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	httpserver "github.com/i4de/rulex/plugin/http_server"
-	"github.com/i4de/rulex/utils"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/utils"
 
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/typex"
 )
 
 /*
@@ -20,7 +20,7 @@ func Test_http_source(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 
-	hh := httpserver.NewHttpApiServer()
+	hh := httpserver.NewHttpApiServer(engine)
 
 	// HttpApiServer loaded default
 	if err := engine.LoadPlugin("plugin.http_server", hh); err != nil {
@@ -35,7 +35,8 @@ func Test_http_source(t *testing.T) {
 			"host": "127.0.0.1",
 		},
 	)
-	if err := engine.LoadInEnd(httpInend); err != nil {
+	ctx, cancelF := typex.NewCCTX() // ,ctx, cancelF
+	if err := engine.LoadInEndWithCtx(httpInend, ctx, cancelF); err != nil {
 		t.Fatal("httpInend load failed:", err)
 	}
 	//
@@ -43,7 +44,7 @@ func Test_http_source(t *testing.T) {
 	//
 	callback :=
 		`Actions = {
-			function(data)
+			function(args)
 				print("From http===>", data)
 				return false, data
 			end

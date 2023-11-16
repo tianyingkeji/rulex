@@ -3,12 +3,11 @@ package driver
 import (
 	"encoding/binary"
 	"encoding/json"
-	"sync"
 	"time"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
 	modbus "github.com/wwhai/gomodbus"
 )
 
@@ -24,7 +23,7 @@ type modBusRtuDriver struct {
 	RuleEngine typex.RuleX
 	Registers  []common.RegisterRW
 	device     *typex.Device
-	lock       sync.Mutex
+	frequency  int64
 }
 
 func NewModBusRtuDriver(
@@ -32,7 +31,7 @@ func NewModBusRtuDriver(
 	e typex.RuleX,
 	Registers []common.RegisterRW,
 	handler *modbus.RTUClientHandler,
-	client modbus.Client) typex.XExternalDriver {
+	client modbus.Client, frequency int64) typex.XExternalDriver {
 	return &modBusRtuDriver{
 		state:      typex.DRIVER_UP,
 		device:     d,
@@ -40,7 +39,7 @@ func NewModBusRtuDriver(
 		client:     client,
 		handler:    handler,
 		Registers:  Registers,
-		lock:       sync.Mutex{},
+		frequency:  frequency,
 	}
 
 }
@@ -61,14 +60,16 @@ func (d *modBusRtuDriver) State() typex.DriverState {
 }
 
 func (d *modBusRtuDriver) Read(cmd []byte, data []byte) (int, error) {
+	var err error
+	var results []byte
 	dataMap := map[string]common.RegisterRW{}
+	count := len(d.Registers)
 	for _, r := range d.Registers {
 		d.handler.SlaveId = r.SlaverId
 		if r.Function == common.READ_COIL {
-			d.lock.Lock()
-			results, err := d.client.ReadCoils(r.Address, r.Quantity)
-			d.lock.Unlock()
+			results, err = d.client.ReadCoils(r.Address, r.Quantity)
 			if err != nil {
+				count--
 				glogger.GLogger.Error(err)
 			}
 			value := common.RegisterRW{
@@ -82,10 +83,9 @@ func (d *modBusRtuDriver) Read(cmd []byte, data []byte) (int, error) {
 			dataMap[r.Tag] = value
 		}
 		if r.Function == common.READ_DISCRETE_INPUT {
-			d.lock.Lock()
-			results, err := d.client.ReadDiscreteInputs(r.Address, r.Quantity)
-			d.lock.Unlock()
+			results, err = d.client.ReadDiscreteInputs(r.Address, r.Quantity)
 			if err != nil {
+				count--
 				glogger.GLogger.Error(err)
 			}
 			value := common.RegisterRW{
@@ -100,10 +100,9 @@ func (d *modBusRtuDriver) Read(cmd []byte, data []byte) (int, error) {
 
 		}
 		if r.Function == common.READ_HOLDING_REGISTERS {
-			d.lock.Lock()
-			results, err := d.client.ReadHoldingRegisters(r.Address, r.Quantity)
-			d.lock.Unlock()
+			results, err = d.client.ReadHoldingRegisters(r.Address, r.Quantity)
 			if err != nil {
+				count--
 				glogger.GLogger.Error(err)
 			}
 			value := common.RegisterRW{
@@ -117,10 +116,9 @@ func (d *modBusRtuDriver) Read(cmd []byte, data []byte) (int, error) {
 			dataMap[r.Tag] = value
 		}
 		if r.Function == common.READ_INPUT_REGISTERS {
-			d.lock.Lock()
-			results, err := d.client.ReadInputRegisters(r.Address, r.Quantity)
-			d.lock.Unlock()
+			results, err = d.client.ReadInputRegisters(r.Address, r.Quantity)
 			if err != nil {
+				count--
 				glogger.GLogger.Error(err)
 			}
 			value := common.RegisterRW{
@@ -133,51 +131,72 @@ func (d *modBusRtuDriver) Read(cmd []byte, data []byte) (int, error) {
 			}
 			dataMap[r.Tag] = value
 		}
-
-		// 设置一个间隔时间防止低级CPU黏包等
-		// TODO 未来通过参数形式传递
-		time.Sleep(time.Duration(100) * time.Millisecond)
+		time.Sleep(time.Duration(d.frequency) * time.Millisecond)
 	}
 	bytes, _ := json.Marshal(dataMap)
 	copy(data, bytes)
-	return len(bytes), nil
+	// 只要有部分成功，哪怕有一个设备出故障也认为是正常的，上层可以根据Value来判断
+	ll := len(d.Registers)
+	if ll > 0 && count > 0 {
+		return len(bytes), nil
+	}
+	return len(bytes), err
 
 }
 
-func (d *modBusRtuDriver) Write(cmd []byte, data []byte) (int, error) {
-	dataMap := []common.RegisterRW{}
-	if err := json.Unmarshal(data, &dataMap); err != nil {
+/*
+*
+* 支持Modbus写入
+*
+ */
+func (d *modBusRtuDriver) Write(_ []byte, data []byte) (int, error) {
+	RegisterW := common.RegisterW{}
+	if err := json.Unmarshal(data, &RegisterW); err != nil {
 		return 0, err
 	}
+	dataMap := [1]common.RegisterW{RegisterW}
 	for _, r := range dataMap {
+		d.handler.SlaveId = r.SlaverId
+		// 5
 		if r.Function == common.WRITE_SINGLE_COIL {
-			d.lock.Lock()
-			_, err := d.client.WriteSingleCoil(r.Address, binary.BigEndian.Uint16([]byte(r.Value)[0:2]))
-			d.lock.Unlock()
-			if err != nil {
-				return 0, err
+			if len(r.Values) > 0 {
+				if r.Values[0] == 0 {
+					_, err := d.client.WriteSingleCoil(r.Address,
+						binary.BigEndian.Uint16([]byte{0x00, 0x00}))
+					if err != nil {
+						return 0, err
+					}
+				}
+				if r.Values[0] == 1 {
+					_, err := d.client.WriteSingleCoil(r.Address,
+						binary.BigEndian.Uint16([]byte{0xFF, 0x00}))
+					if err != nil {
+						return 0, err
+					}
+				}
+
 			}
+
 		}
+		// 15
 		if r.Function == common.WRITE_MULTIPLE_COILS {
-			d.lock.Lock()
-			_, err := d.client.WriteMultipleCoils(r.Address, r.Quantity, []byte(r.Value))
-			d.lock.Unlock()
+			_, err := d.client.WriteMultipleCoils(r.Address, r.Quantity, r.Values)
 			if err != nil {
 				return 0, err
 			}
 		}
+		// 6
 		if r.Function == common.WRITE_SINGLE_HOLDING_REGISTER {
-			d.lock.Lock()
-			_, err := d.client.WriteSingleRegister(r.Address, binary.BigEndian.Uint16([]byte(r.Value)[0:2]))
-			d.lock.Unlock()
+			_, err := d.client.WriteSingleRegister(r.Address, binary.BigEndian.Uint16(r.Values))
 			if err != nil {
 				return 0, err
 			}
 		}
+		// 16
 		if r.Function == common.WRITE_MULTIPLE_HOLDING_REGISTERS {
-			d.lock.Lock()
-			_, err := d.client.WriteMultipleRegisters(r.Address, r.Quantity, []byte(r.Value))
-			d.lock.Unlock()
+
+			_, err := d.client.WriteMultipleRegisters(r.Address,
+				uint16(len(r.Values))/2, maybePrependZero(r.Values))
 			if err != nil {
 				return 0, err
 			}
@@ -185,7 +204,12 @@ func (d *modBusRtuDriver) Write(cmd []byte, data []byte) (int, error) {
 	}
 	return 0, nil
 }
-
+func maybePrependZero(slice []byte) []byte {
+	if len(slice)%2 != 0 {
+		slice = append([]byte{0}, slice...)
+	}
+	return slice
+}
 func (d *modBusRtuDriver) DriverDetail() typex.DriverDetail {
 	return typex.DriverDetail{
 		Name:        "Generic ModBus RTU Driver",
@@ -195,7 +219,5 @@ func (d *modBusRtuDriver) DriverDetail() typex.DriverDetail {
 }
 
 func (d *modBusRtuDriver) Stop() error {
-	d.handler.Close()
-	d = nil
-	return nil
+	return d.handler.Close()
 }

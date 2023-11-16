@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-playground/assert/v2"
-	httpserver "github.com/i4de/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/plugin/http_server/model"
 )
 
 /*
@@ -20,7 +20,7 @@ import (
  *
  */
 
-// go test -timeout 30s -run ^Test_CURD_App github.com/i4de/rulex/test -v -count=1
+// go test -timeout 30s -run ^Test_CURD_App github.com/hootrhino/rulex/test -v -count=1
 func Test_CURD_App(t *testing.T) {
 	RmUnitTestDbFile(t)
 	StartTestServer(t)
@@ -39,8 +39,8 @@ func UT_createApp(t *testing.T) string {
 	}
 	t.Log("UT_createApp: ", string(output))
 	//
-	LoadDB()
-	mApp := []httpserver.MApp{}
+	LoadUnitTestDB()
+	mApp := []model.MApp{}
 	unitTestDB.Raw("SELECT * FROM m_apps").Find(&mApp)
 	assert.Equal(t, 1, len(mApp))
 	t.Log(mApp[0].UUID)
@@ -49,11 +49,12 @@ func UT_createApp(t *testing.T) string {
 	assert.Equal(t, mApp[0].AutoStart, true)
 	return mApp[0].UUID
 }
+
 /*
 *
 *
 *
-*/
+ */
 func UT_updateApp(t *testing.T, uuid string) {
 	body := `{"uuid": "%s","name": "testlua11","version": "1.0.1","autoStart": false,"luaSource":"AppNAME='OK1'\nAppVERSION='0.0.3'\nfunction Main()\n\tprint('Hello-World')\nend"}`
 	t.Logf(body, uuid)
@@ -64,8 +65,8 @@ func UT_updateApp(t *testing.T, uuid string) {
 		t.Fatal(err)
 	}
 	t.Log("UT_updateApp: ", string(output))
-	LoadDB()
-	mApp := []httpserver.MApp{}
+	LoadUnitTestDB()
+	mApp := []model.MApp{}
 	unitTestDB.Raw("SELECT * FROM m_apps").Find(&mApp)
 	assert.Equal(t, 1, len(mApp))
 	t.Log(mApp[0].UUID)
@@ -81,8 +82,8 @@ func UT_deleteApp(t *testing.T, uuid string) {
 	}
 	t.Log("UT_deleteApp: ", string(output))
 	//
-	LoadDB()
-	mApp := []httpserver.MApp{}
+	LoadUnitTestDB()
+	mApp := []model.MApp{}
 	unitTestDB.Raw("SELECT * FROM m_apps").Find(&mApp)
 	assert.Equal(t, 0, len(mApp))
 }

@@ -9,16 +9,16 @@ import (
 
 	serial "github.com/wwhai/tarmserial"
 
-	httpserver "github.com/i4de/rulex/plugin/http_server"
-	"github.com/i4de/rulex/rulexrpc"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/component/rulexrpc"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 // FFFFFF014CB2AA55
-// go test -timeout 30s -run ^TestHexEncoding github.com/i4de/rulex/test -v -count=1
+// go test -timeout 30s -run ^TestHexEncoding github.com/hootrhino/rulex/test -v -count=1
 func TestHexEncoding(t *testing.T) {
 	hexs := []byte{255, 255, 255, 1, 76, 178, 170, 85}
 	s := hex.EncodeToString(hexs)
@@ -27,7 +27,7 @@ func TestHexEncoding(t *testing.T) {
 	t.Log(hex.DecodeString(s))
 }
 
-// go test -timeout 30s -run ^TestCheckSUM github.com/i4de/rulex/test -v -count=1
+// go test -timeout 30s -run ^TestCheckSUM github.com/hootrhino/rulex/test -v -count=1
 
 func TestCheckSUM(t *testing.T) {
 	hexs := [8]byte{0xFF, 0xFF, 0xFF, 0x01, 0x4C, 0xB2, 0xAA, 0x55}
@@ -40,14 +40,14 @@ func TestCheckSUM(t *testing.T) {
 	t.Log(utils.XOR(hexs[checksumBegin:checksumEnd]) == int(hexs[checksumValuePos]))
 }
 
-// go test -timeout 30s -run ^TestCustomProtocolDevice github.com/i4de/rulex/test -v -count=1
+// go test -timeout 30s -run ^TestCustomProtocolDevice github.com/hootrhino/rulex/test -v -count=1
 
 func TestCustomProtocolDevice(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 
 	// HttpApiServer loaded default
-	if err := engine.LoadPlugin("plugin.http_server", httpserver.NewHttpApiServer()); err != nil {
+	if err := engine.LoadPlugin("plugin.http_server", httpserver.NewHttpApiServer(engine)); err != nil {
 		t.Fatal("HttpServer load failed:", err)
 	}
 	// Grpc Inend
@@ -56,13 +56,13 @@ func TestCustomProtocolDevice(t *testing.T) {
 			"port": 2581,
 			"host": "127.0.0.1",
 		})
-
-	if err := engine.LoadInEnd(grpcInend); err != nil {
+	ctx, cancelF := typex.NewCCTX()
+	if err := engine.LoadInEndWithCtx(grpcInend, ctx, cancelF); err != nil {
 		t.Fatal("Rule load failed:", err)
 	}
 	//
 	dev1 := typex.NewDevice(typex.GENERIC_PROTOCOL,
-		"UART", "UART", "UART", map[string]interface{}{
+		"UART", "UART", map[string]interface{}{
 			"commonConfig": map[string]interface{}{
 				"frequency":   5,
 				"autoRequest": true,
@@ -98,7 +98,8 @@ func TestCustomProtocolDevice(t *testing.T) {
 			},
 		})
 	dev1.UUID = "dev1"
-	if err := engine.LoadDevice(dev1); err != nil {
+	ctx1, cancelF1 := typex.NewCCTX()
+	if err := engine.LoadDeviceWithCtx(dev1, ctx1, cancelF1); err != nil {
 		t.Fatal("dev1 load failed:", err)
 	}
 
@@ -111,9 +112,9 @@ func TestCustomProtocolDevice(t *testing.T) {
 		`function Success() print("[LUA Success Callback]=> OK") end`,
 		`
 		Actions = {
-		function(data)
+		function(args)
 			   print("Received Inend Data ======> : ",data)
-			return true, data
+			return true, args
 		end,
 	}
 `,
@@ -139,7 +140,7 @@ func TestCustomProtocolDevice(t *testing.T) {
 	engine.Stop()
 }
 
-// go test -timeout 30s -run ^Test_SerialPortRW github.com/i4de/rulex/test -v -count=1
+// go test -timeout 30s -run ^Test_SerialPortRW github.com/hootrhino/rulex/test -v -count=1
 func Test_SerialPortRW(t *testing.T) {
 	config := serial.Config{
 		Name:     "COM15",
@@ -156,23 +157,23 @@ func Test_SerialPortRW(t *testing.T) {
 	bytes, _ := hex.DecodeString("FFFFFF014CB2AA55")
 	result := [7]byte{}
 	serialPort.Write((bytes))
-	// time.Sleep(time.Microsecond * 60)
+	// time.Sleep(time.Millisecond * 60)
 	n1, _ := serialPort.Read(result[:])
 	t.Log("serialPort.Read 1:", n1, result[:n1])
 	serialPort.Write((bytes))
-	// time.Sleep(time.Microsecond * 60)
+	// time.Sleep(time.Millisecond * 60)
 	n2, _ := serialPort.Read(result[:])
 	t.Log("serialPort.Read 2:", n2, result[:n2])
 	serialPort.Write((bytes))
-	// time.Sleep(time.Microsecond * 60)
+	// time.Sleep(time.Millisecond * 60)
 	n3, _ := serialPort.Read(result[:])
 	t.Log("serialPort.Read 3:", n3, result[:n3])
 	serialPort.Write((bytes))
-	// time.Sleep(time.Microsecond * 60)
+	// time.Sleep(time.Millisecond * 60)
 	n4, _ := serialPort.Read(result[:])
 	t.Log("serialPort.Read 4:", n4, result[:n4])
 	serialPort.Write((bytes))
-	// time.Sleep(time.Microsecond * 60)
+	// time.Sleep(time.Millisecond * 60)
 	n5, _ := serialPort.Read(result[:])
 	t.Log("serialPort.Read 5:", n5, result[:n5])
 	serialPort.Write((bytes))

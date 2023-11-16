@@ -1,12 +1,26 @@
+// Copyright (C) 2023 wwhai
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package engine
 
 import (
-	"errors"
 	"sync"
 
-	"github.com/i4de/rulex/core"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/core"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
 )
 
 // LoadRule: 每个规则都绑定了资源(FromSource)或者设备(FromDevice)
@@ -33,8 +47,6 @@ func (e *RuleEngine) LoadRule(r *typex.Rule) error {
 		if in := e.GetInEnd(inUUId); in != nil {
 			(in.BindRules)[r.UUID] = *r
 			return nil
-		} else {
-			return errors.New("'InEnd':" + inUUId + " is not exists when bind resource")
 		}
 	}
 	// 绑定设备
@@ -43,8 +55,6 @@ func (e *RuleEngine) LoadRule(r *typex.Rule) error {
 		if Device := e.GetDevice(devUUId); Device != nil {
 			// 绑定资源和规则，建立关联关系
 			(Device.BindRules)[r.UUID] = *r
-		} else {
-			return errors.New("'Device':" + devUUId + " is not exists when bind resource")
 		}
 	}
 	return nil
@@ -82,6 +92,7 @@ func (e *RuleEngine) RemoveRule(ruleId string) {
 		e.AllDevices().Range(func(key, value interface{}) bool {
 			Device := value.(*typex.Device)
 			for _, r := range Device.BindRules {
+				glogger.GLogger.Debugf("Unlink rule:%s", rule.Name)
 				if rule.UUID == r.UUID {
 					delete(Device.BindRules, ruleId)
 				}
@@ -89,7 +100,6 @@ func (e *RuleEngine) RemoveRule(ruleId string) {
 			return true
 		})
 		e.Rules.Delete(ruleId)
-		rule = nil
 		glogger.GLogger.Infof("Rule [%v] has been deleted", ruleId)
 	}
 }

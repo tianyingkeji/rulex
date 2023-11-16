@@ -1,3 +1,18 @@
+// Copyright (C) 2023 wwhai
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package target
 
 import (
@@ -5,10 +20,10 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -57,18 +72,6 @@ func (sqt *SqliteTarget) Start(cctx typex.CCTX) error {
 	return nil
 }
 
-func (sqt *SqliteTarget) Test(outEndId string) bool {
-	return true
-}
-func (sqt *SqliteTarget) Enabled() bool {
-	return true
-}
-func (sqt *SqliteTarget) Reload() {
-
-}
-func (sqt *SqliteTarget) Pause() {
-
-}
 func (sqt *SqliteTarget) Status() typex.SourceState {
 	return typex.SOURCE_UP
 
@@ -105,13 +108,4 @@ func (sqt *SqliteTarget) Stop() {
 }
 func (sqt *SqliteTarget) Details() *typex.OutEnd {
 	return sqt.RuleEngine.GetOutEnd(sqt.PointId)
-}
-
-/*
-*
-* 配置
-*
- */
-func (*SqliteTarget) Configs() *typex.XConfig {
-	return &typex.XConfig{}
 }

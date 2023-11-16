@@ -1,242 +1,526 @@
 package httpserver
 
 import (
-	"context"
-	"embed"
-	"io/fs"
-	"net/http"
-	"path"
-	"strconv"
-	"time"
+	"encoding/json"
 
-	"github.com/gin-contrib/static"
-	"github.com/i4de/rulex/device"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/source"
-	"github.com/i4de/rulex/target"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/component/hwportmanager"
 
-	"github.com/gin-gonic/gin"
+	"github.com/hootrhino/rulex/component/appstack"
+	"github.com/hootrhino/rulex/component/interdb"
+	"github.com/hootrhino/rulex/component/trailer"
+	"github.com/hootrhino/rulex/core"
+	"github.com/hootrhino/rulex/plugin/http_server/apis"
+	"github.com/hootrhino/rulex/plugin/http_server/model"
+	"github.com/hootrhino/rulex/plugin/http_server/server"
+	"github.com/hootrhino/rulex/plugin/http_server/service"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
+
 	"gopkg.in/ini.v1"
 
 	_ "github.com/mattn/go-sqlite3"
-	"gorm.io/gorm"
 )
 
-const _API_V1_ROOT string = "/api/v1/"
-const _DEFAULT_DB_PATH string = "./rulex.db"
-
-// 启动时间
-var StartedTime = time.Unix(time.Now().Unix(), 0).Format("2006-01-02 15:04:05")
-
 type _serverConfig struct {
-	Enable bool   `ini:"enable"`
-	Host   string `ini:"host"`
 	DbPath string `ini:"dbpath"`
-	Port   int    `ini:"port"`
 }
-type HttpApiServer struct {
-	Port       int
-	Host       string
-	sqliteDb   *gorm.DB
-	dbPath     string
-	ginEngine  *gin.Engine
+type ApiServerPlugin struct {
+	uuid       string
 	ruleEngine typex.RuleX
+	mainConfig _serverConfig
 }
 
-func NewHttpApiServer() *HttpApiServer {
-	return &HttpApiServer{}
+func NewHttpApiServer(ruleEngine typex.RuleX) *ApiServerPlugin {
+	return &ApiServerPlugin{
+		uuid:       "HTTP-API-SERVER",
+		mainConfig: _serverConfig{},
+		ruleEngine: ruleEngine,
+	}
 }
 
-func (hh *HttpApiServer) Init(config *ini.Section) error {
-	gin.SetMode(gin.ReleaseMode)
-	hh.ginEngine = gin.New()
-	var mainConfig _serverConfig
-	if err := utils.InIMapToStruct(config, &mainConfig); err != nil {
+/*
+*
+* 初始化RULEX, 初始化数据到运行时
+*
+ */
+func initRulex(engine typex.RuleX) {
+	/*
+	*
+	* 加载Port
+	*
+	 */
+	loadAllPortConfig()
+	/*
+	*
+	* 加载schema到内存中
+	*
+	 */
+	for _, mDataSchema := range service.AllDataSchema() {
+		dataDefine := []typex.DataDefine{}
+		err := json.Unmarshal([]byte(mDataSchema.Schema), &dataDefine)
+		if err != nil {
+			glogger.GLogger.Error(err)
+			continue
+		}
+		// 初始化装入ne
+		core.SchemaSet(mDataSchema.UUID, typex.DataSchema{
+			UUID:   mDataSchema.UUID,
+			Name:   mDataSchema.Name,
+			Type:   mDataSchema.Type,
+			Schema: dataDefine,
+		})
+	}
+	//
+	// Load inend from sqlite
+	//
+	for _, minEnd := range service.AllMInEnd() {
+		if err := server.LoadNewestInEnd(minEnd.UUID, engine); err != nil {
+			glogger.GLogger.Error("InEnd load failed:", err)
+		}
+	}
+
+	//
+	// Load out from sqlite
+	//
+	for _, mOutEnd := range service.AllMOutEnd() {
+		if err := server.LoadNewestOutEnd(mOutEnd.UUID, engine); err != nil {
+			glogger.GLogger.Error("OutEnd load failed:", err)
+		}
+	}
+	// 加载设备
+	for _, mDevice := range service.AllDevices() {
+		glogger.GLogger.Debug("LoadNewestDevice mDevice.BindRules: ", mDevice.BindRules.String())
+		if err := server.LoadNewestDevice(mDevice.UUID, engine); err != nil {
+			glogger.GLogger.Error("Device load failed:", err)
+		}
+
+	}
+	// 加载外挂
+	for _, mGoods := range service.AllGoods() {
+		newGoods := trailer.GoodsInfo{
+			UUID:        mGoods.UUID,
+			AutoStart:   mGoods.AutoStart,
+			LocalPath:   mGoods.LocalPath,
+			NetAddr:     mGoods.NetAddr,
+			Args:        mGoods.Args,
+			ExecuteType: mGoods.ExecuteType,
+			Description: mGoods.Description,
+		}
+		if err := trailer.StartProcess(newGoods); err != nil {
+			glogger.GLogger.Error("Goods load failed:", err)
+		}
+	}
+	//
+	// APP stack
+	//
+	for _, mApp := range service.AllApp() {
+		app := appstack.NewApplication(
+			mApp.UUID,
+			mApp.Name,
+			mApp.Version,
+		)
+		if err := appstack.LoadApp(app, mApp.LuaSource); err != nil {
+			glogger.GLogger.Error(err)
+			continue
+		}
+		if *mApp.AutoStart {
+			glogger.GLogger.Debug("App autoStart allowed:", app.UUID)
+			if err1 := appstack.StartApp(app.UUID); err1 != nil {
+				glogger.GLogger.Error("App autoStart failed:", err1)
+			}
+		}
+	}
+
+}
+
+/*
+*
+* 从数据库拿端口配置
+*
+ */
+func loadAllPortConfig() {
+	MHwPorts, err := service.AllHwPort()
+	if err != nil {
+		glogger.GLogger.Fatal(err)
+		return
+	}
+	for _, MHwPort := range MHwPorts {
+		Port := hwportmanager.RhinoH3HwPort{
+			UUID:        MHwPort.UUID,
+			Name:        MHwPort.Name,
+			Type:        MHwPort.Type,
+			Alias:       MHwPort.Alias,
+			Description: MHwPort.Description,
+		}
+		// 串口
+		if MHwPort.Type == "UART" {
+			config := hwportmanager.UartConfig{}
+			if err := utils.BindConfig(MHwPort.GetConfig(), &config); err != nil {
+				glogger.GLogger.Error(err) // 这里必须不能出错
+				continue
+			}
+			Port.Config = config
+			hwportmanager.SetHwPort(Port)
+		}
+		// 未知接口参数为空，以后扩展，比如FD
+		if MHwPort.Type != "UART" {
+			Port.Config = nil
+			hwportmanager.SetHwPort(Port)
+		}
+	}
+}
+
+func (hs *ApiServerPlugin) Init(config *ini.Section) error {
+	if err := utils.InIMapToStruct(config, &hs.mainConfig); err != nil {
 		return err
 	}
-	hh.Host = mainConfig.Host
-	hh.dbPath = mainConfig.DbPath
-	hh.Port = mainConfig.Port
-	configHttpServer(hh)
-	//
-	// Http server
-	//
-	go func(ctx context.Context, port int) {
-		if err := hh.ginEngine.Run(":" + strconv.Itoa(port)); err != nil {
-			glogger.GLogger.Fatalf("httpserver listen error: %s\n", err)
-		}
-	}(typex.GCTX, hh.Port)
-	//
-	// WebSocket server
-	//
-	hh.ginEngine.GET("/ws", glogger.WsLogger)
+	server.StartRulexApiServer(hs.ruleEngine)
+	interdb.RegisterModel(
+		&model.MInEnd{},
+		&model.MOutEnd{},
+		&model.MRule{},
+		&model.MUser{},
+		&model.MDevice{},
+		&model.MGoods{},
+		&model.MApp{},
+		&model.MAiBase{},
+		&model.MModbusPointPosition{},
+		&model.MVisual{},
+		&model.MGenericGroup{},
+		&model.MGenericGroupRelation{},
+		&model.MProtocolApp{},
+		&model.MNetworkConfig{},
+		&model.MWifiConfig{},
+		&model.MDataSchema{},
+		&model.MSiteConfig{},
+		&model.MIpRoute{},
+		&model.MCronTask{},
+		&model.MCronResult{},
+		&model.MHwPort{},
+	)
+	// 初始化所有预制参数
+	server.DefaultApiServer.InitializeGenericOSData()
+	server.DefaultApiServer.InitializeEEKITData()
+	server.DefaultApiServer.InitializeWindowsData()
+	server.DefaultApiServer.InitializeUnixData()
+	initRulex(hs.ruleEngine)
 	return nil
 }
 
-// HttpApiServer Start
-func (hh *HttpApiServer) Start(r typex.RuleX) error {
-	hh.ruleEngine = r
-	//
-	// Get all plugins
-	//
-	hh.ginEngine.GET(url("plugins"), hh.addRoute(Plugins))
-	//
-	// Get system information
-	//
-	hh.ginEngine.GET(url("system"), hh.addRoute(System))
-	//
-	// Ping -> Pong
-	//
-	hh.ginEngine.GET(url("ping"), hh.addRoute(Ping))
-	//
-	//
-	//
-	hh.ginEngine.GET(url("sourceCount"), hh.addRoute(SourceCount))
-	//
-	//
-	//
-	hh.ginEngine.GET(url("logs"), hh.addRoute(Logs))
-	//
-	//
-	//
-	hh.ginEngine.POST(url("logout"), hh.addRoute(LogOut))
+/*
+*
+* 加载路由
+*
+ */
+func (hs *ApiServerPlugin) LoadRoute() {
+	systemApi := server.RouteGroup(server.ContextUrl("/"))
+	{
+		systemApi.GET(("/ping"), server.AddRoute(apis.Ping))
+		systemApi.POST(("/logout"), server.AddRoute(apis.LogOut))
+	}
 	//
 	// Get all inends
 	//
-	hh.ginEngine.GET(url("inends"), hh.addRoute(InEnds))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("inends"), server.AddRoute(apis.InEnds))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("inends/detail"), server.AddRoute(apis.InEndDetail))
 	//
 	//
 	//
-	hh.ginEngine.GET(url("drivers"), hh.addRoute(Drivers))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("drivers"), server.AddRoute(apis.Drivers))
 	//
 	// Get all outends
 	//
-	hh.ginEngine.GET(url("outends"), hh.addRoute(OutEnds))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("outends"), server.AddRoute(apis.OutEnds))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("outends/detail"), server.AddRoute(apis.OutEndDetail))
 	//
 	// Get all rules
 	//
-	hh.ginEngine.GET(url("rules"), hh.addRoute(Rules))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("rules"), server.AddRoute(apis.Rules))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("rules/detail"), server.AddRoute(apis.RuleDetail))
 	//
 	// Get statistics data
 	//
-	hh.ginEngine.GET(url("statistics"), hh.addRoute(Statistics))
-	hh.ginEngine.GET(url("snapshot"), hh.addRoute(SnapshotDump))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("statistics"), server.AddRoute(apis.Statistics))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("snapshot"), server.AddRoute(apis.SnapshotDump))
 	//
 	// Auth
 	//
-	hh.ginEngine.GET(url("users"), hh.addRoute(Users))
-	hh.ginEngine.POST(url("users"), hh.addRoute(CreateUser))
+	userApi := server.RouteGroup(server.ContextUrl("/users"))
+	{
+		userApi.GET(("/"), server.AddRoute(apis.Users))
+		userApi.POST(("/"), server.AddRoute(apis.CreateUser))
+		userApi.GET(("/detail"), server.AddRoute(apis.UserDetail))
+		userApi.POST(("/logout"), server.AddRoute(apis.LogOut))
+
+	}
+
 	//
 	//
 	//
-	hh.ginEngine.POST(url("login"), hh.addRoute(Login))
+	server.DefaultApiServer.Route().POST(server.ContextUrl("login"), server.AddRoute(apis.Login))
 	//
 	//
 	//
-	hh.ginEngine.GET(url("info"), hh.addRoute(Info))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("info"), server.AddRoute(apis.Info))
 	//
 	// Create InEnd
 	//
-	hh.ginEngine.POST(url("inends"), hh.addRoute(CreateInend))
-	hh.ginEngine.PUT(url("inends"), hh.addRoute(CreateInend))
+	server.DefaultApiServer.Route().POST(server.ContextUrl("inends"), server.AddRoute(apis.CreateInend))
+	//
+	// Update Inend
+	//
+	server.DefaultApiServer.Route().PUT(server.ContextUrl("inends"), server.AddRoute(apis.UpdateInend))
 	//
 	// 配置表
 	//
-	hh.ginEngine.GET(url("inends/config"), hh.addRoute(GetInEndConfig))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("inends/config"), server.AddRoute(apis.GetInEndConfig))
 	//
 	// 数据模型表
 	//
-	hh.ginEngine.GET(url("inends/models"), hh.addRoute(GetInEndModels))
+	server.DefaultApiServer.Route().GET(server.ContextUrl("inends/models"), server.AddRoute(apis.GetInEndModels))
 	//
 	// Create OutEnd
 	//
-	hh.ginEngine.POST(url("outends"), hh.addRoute(CreateOutEnd))
-	hh.ginEngine.PUT(url("outends"), hh.addRoute(CreateOutEnd))
+	server.DefaultApiServer.Route().POST(server.ContextUrl("outends"), server.AddRoute(apis.CreateOutEnd))
 	//
-	// Create rule
+	// Update OutEnd
 	//
-	hh.ginEngine.POST(url("rules"), hh.addRoute(CreateRule))
-	//
-	// Update rule
-	//
-	hh.ginEngine.PUT(url("rules"), hh.addRoute(CreateRule))
-	//
-	// Delete rule by UUID
-	//
-	hh.ginEngine.DELETE(url("rules"), hh.addRoute(DeleteRule))
+	server.DefaultApiServer.Route().PUT(server.ContextUrl("outends"), server.AddRoute(apis.UpdateOutEnd))
+	rulesApi := server.RouteGroup(server.ContextUrl("/rules"))
+	{
+		rulesApi.POST(("/"), server.AddRoute(apis.CreateRule))
+		rulesApi.PUT(("/"), server.AddRoute(apis.UpdateRule))
+		rulesApi.DELETE(("/"), server.AddRoute(apis.DeleteRule))
+		rulesApi.POST(("/testIn"), server.AddRoute(apis.TestSourceCallback))
+		rulesApi.POST(("/testOut"), server.AddRoute(apis.TestOutEndCallback))
+		rulesApi.POST(("/testDevice"), server.AddRoute(apis.TestDeviceCallback))
+		rulesApi.GET(("/byInend"), server.AddRoute(apis.ListByInend))
+		rulesApi.GET(("/byDevice"), server.AddRoute(apis.ListByDevice))
+	}
+
 	//
 	// Delete inend by UUID
 	//
-	hh.ginEngine.DELETE(url("inends"), hh.addRoute(DeleteInEnd))
+	server.DefaultApiServer.Route().DELETE(server.ContextUrl("inends"), server.AddRoute(apis.DeleteInEnd))
 	//
 	// Delete outEnd by UUID
 	//
-	hh.ginEngine.DELETE(url("outends"), hh.addRoute(DeleteOutEnd))
+	server.DefaultApiServer.Route().DELETE(server.ContextUrl("outends"), server.AddRoute(apis.DeleteOutEnd))
 
 	//
 	// 验证 lua 语法
 	//
-	hh.ginEngine.POST(url("validateRule"), hh.addRoute(ValidateLuaSyntax))
+	server.DefaultApiServer.Route().POST(server.ContextUrl("validateRule"), server.AddRoute(apis.ValidateLuaSyntax))
+
 	//
-	// 获取配置表
+	// 网络适配器列表
 	//
-	hh.ginEngine.GET(url("rType"), hh.addRoute(RType))
-	hh.ginEngine.GET(url("tType"), hh.addRoute(TType))
-	hh.ginEngine.GET(url("dType"), hh.addRoute(DType))
-	//
-	// 串口列表
-	//
-	hh.ginEngine.GET(url("uarts"), hh.addRoute(GetUarts))
-	//
-	// 获取服务启动时间
-	//
-	hh.ginEngine.GET(url("startedAt"), hh.addRoute(StartedAt))
+	osApi := server.RouteGroup(server.ContextUrl("/os"))
+	{
+		osApi.GET(("/netInterfaces"), server.AddRoute(apis.GetNetInterfaces))
+		osApi.GET(("/osRelease"), server.AddRoute(apis.CatOsRelease))
+		osApi.GET(("/uarts"), server.AddRoute(apis.GetUartList))
+		osApi.GET(("/system"), server.AddRoute(apis.System))
+		osApi.GET(("/startedAt"), server.AddRoute(apis.StartedAt))
+
+	}
+	backupApi := server.RouteGroup(server.ContextUrl("/backup"))
+	{
+		backupApi.GET(("/download"), server.AddRoute(apis.DownloadSqlite))
+		backupApi.POST(("/upload"), server.AddRoute(apis.UploadSqlite))
+	}
 	//
 	// 设备管理
 	//
-	hh.ginEngine.GET(url("devices"), hh.addRoute(Devices))
-	hh.ginEngine.POST(url("devices"), hh.addRoute(CreateDevice))
-	hh.ginEngine.PUT(url("devices"), hh.addRoute(UpdateDevice))
-	hh.ginEngine.DELETE(url("devices"), hh.addRoute(DeleteDevice))
+	deviceApi := server.RouteGroup(server.ContextUrl("/devices"))
+	{
+		deviceApi.POST(("/"), server.AddRoute(apis.CreateDevice))
+		deviceApi.PUT(("/"), server.AddRoute(apis.UpdateDevice))
+		deviceApi.DELETE(("/"), server.AddRoute(apis.DeleteDevice))
+		deviceApi.GET(("/detail"), server.AddRoute(apis.DeviceDetail))
+		deviceApi.POST(("/modbus/sheetImport"), server.AddRoute(apis.ModbusSheetImport))
+		deviceApi.PUT(("/modbus/point"), server.AddRoute(apis.UpdateModbusPoint))
+		deviceApi.GET(("/modbus"), server.AddRoute(apis.ModbusPoints))
+		deviceApi.GET("/group", server.AddRoute(apis.ListDeviceGroup))
+		deviceApi.GET("/listByGroup", server.AddRoute(apis.ListDeviceByGroup))
 
-	// 外挂管理
-	hh.ginEngine.GET(url("goods"), hh.addRoute(Goods))
-	hh.ginEngine.POST(url("goods"), hh.addRoute(CreateGoods))
-	hh.ginEngine.PUT(url("goods"), hh.addRoute(UpdateGoods))
-	hh.ginEngine.DELETE(url("goods"), hh.addRoute(DeleteGoods))
-	// 加载资源类型
-	source.LoadSt()
-	target.LoadTt()
-	device.LoadDt()
-	//----------------------------------------------------------------------------------------------
+	}
+
+	// ----------------------------------------------------------------------------------------------
 	// APP
-	//----------------------------------------------------------------------------------------------
-	hh.ginEngine.GET(url("app"), hh.addRoute(Apps))
-	hh.ginEngine.POST(url("app"), hh.addRoute(CreateApp))
-	hh.ginEngine.PUT(url("app"), hh.addRoute(UpdateApp))
-	hh.ginEngine.DELETE(url("app"), hh.addRoute(RemoveApp))
-	hh.ginEngine.PUT(url("app/start"), hh.addRoute(StartApp))
-	hh.ginEngine.PUT(url("app/stop"), hh.addRoute(StopApp))
+	// ----------------------------------------------------------------------------------------------
+	appApi := server.RouteGroup(server.ContextUrl("/app"))
+	{
+		appApi.GET(("/"), server.AddRoute(apis.Apps))
+		appApi.POST(("/"), server.AddRoute(apis.CreateApp))
+		appApi.PUT(("/"), server.AddRoute(apis.UpdateApp))
+		appApi.DELETE(("/"), server.AddRoute(apis.RemoveApp))
+		appApi.PUT(("/start"), server.AddRoute(apis.StartApp))
+		appApi.PUT(("/stop"), server.AddRoute(apis.StopApp))
+		appApi.GET(("/detail"), server.AddRoute(apis.AppDetail))
+	}
+	// ----------------------------------------------------------------------------------------------
+	// AI BASE
+	// ----------------------------------------------------------------------------------------------
+	aiApi := server.RouteGroup(server.ContextUrl("/aibase"))
+	{
+		aiApi.GET(("/"), server.AddRoute(apis.AiBase))
+		aiApi.DELETE(("/"), server.AddRoute(apis.DeleteAiBase))
+	}
+	// ----------------------------------------------------------------------------------------------
+	// Plugin
+	// ----------------------------------------------------------------------------------------------
+	pluginsApi := server.RouteGroup(server.ContextUrl("/plugins"))
+	{
+		pluginsApi.GET(("/"), server.AddRoute(apis.Plugins))
+	}
+	pluginApi := server.RouteGroup(server.ContextUrl("/plugin"))
+	{
+		pluginApi.POST(("/service"), server.AddRoute(apis.PluginService))
+		pluginApi.GET(("/detail"), server.AddRoute(apis.PluginDetail))
+	}
 
-	glogger.GLogger.Infof("Http server started on http://0.0.0.0:%v", hh.Port)
+	//
+	// 分组管理
+	//
+	groupApi := server.RouteGroup(server.ContextUrl("/group"))
+	{
+		groupApi.POST("/create", server.AddRoute(apis.CreateGroup))
+		groupApi.PUT("/update", server.AddRoute(apis.UpdateGroup))
+		groupApi.GET("/list", server.AddRoute(apis.ListGroup))
+		groupApi.GET("/detail", server.AddRoute(apis.GroupDetail))
+		groupApi.POST("/bind", server.AddRoute(apis.BindResource))
+		groupApi.PUT("/unbind", server.AddRoute(apis.UnBindResource))
+		groupApi.DELETE("/", server.AddRoute(apis.DeleteGroup))
+	}
+
+	//
+	// 协议应用管理
+	//
+	protoAppApi := server.RouteGroup(server.ContextUrl("/protoapp"))
+	{
+		protoAppApi.POST("/create", server.AddRoute(apis.CreateProtocolApp))
+		protoAppApi.DELETE("/delete", server.AddRoute(apis.DeleteProtocolApp))
+		protoAppApi.PUT("/update", server.AddRoute(apis.UpdateProtocolApp))
+		protoAppApi.GET("/list", server.AddRoute(apis.ListProtocolApp))
+	}
+	//
+	// 大屏应用管理
+	//
+	visualApi := server.RouteGroup(server.ContextUrl("/visual"))
+	{
+		visualApi.POST("/create", server.AddRoute(apis.CreateVisual))
+		visualApi.PUT("/publish", server.AddRoute(apis.PublishVisual))
+		visualApi.PUT("/update", server.AddRoute(apis.UpdateVisual))
+		visualApi.GET("/listByGroup", server.AddRoute(apis.ListVisualByGroup))
+		visualApi.GET("/detail", server.AddRoute(apis.VisualDetail))
+		visualApi.GET("/group", server.AddRoute(apis.ListVisualGroup))
+		visualApi.DELETE("/", server.AddRoute(apis.DeleteVisual))
+		// 缩略图
+		visualApi.POST("/thumbnail", server.AddRoute(apis.UploadFile))
+		visualApi.GET("/thumbnail", server.AddRoute(apis.GetThumbnail))
+	}
+	/*
+	*
+	* 模型管理
+	*
+	 */
+	schemaApi := server.RouteGroup(server.ContextUrl("/schema"))
+	{
+		schemaApi.POST("/create", server.AddRoute(apis.CreateDataSchema))
+		schemaApi.DELETE("/delete", server.AddRoute(apis.DeleteDataSchema))
+		schemaApi.PUT("/update", server.AddRoute(apis.UpdateDataSchema))
+		schemaApi.GET("/list", server.AddRoute(apis.ListDataSchema))
+		schemaApi.GET(("/detail"), server.AddRoute(apis.DataSchemaDetail))
+
+	}
+	siteConfigApi := server.RouteGroup(server.ContextUrl("/site"))
+	{
+
+		siteConfigApi.PUT("/update", server.AddRoute(apis.UpdateSiteConfig))
+		siteConfigApi.PUT("/reset", server.AddRoute(apis.ResetSiteConfig))
+		siteConfigApi.GET("/detail", server.AddRoute(apis.GetSiteConfig))
+		siteConfigApi.GET(("/logo"), server.AddRoute(apis.GetSysLogo))
+		siteConfigApi.POST(("/logo"), server.AddRoute(apis.UploadSysLogo))
+	}
+	trailerApi := server.RouteGroup(server.ContextUrl("/goods"))
+	{
+		trailerApi.GET("/list", server.AddRoute(apis.GoodsList))
+		trailerApi.GET(("/detail"), server.AddRoute(apis.GoodsDetail))
+		trailerApi.POST("/create", server.AddRoute(apis.CreateGoods))
+		trailerApi.PUT("/update", server.AddRoute(apis.UpdateGoods))
+		trailerApi.PUT("/cleanGarbage", server.AddRoute(apis.CleanGoodsUpload))
+		trailerApi.PUT("/start", server.AddRoute(apis.StartGoods))
+		trailerApi.PUT("/stop", server.AddRoute(apis.StopGoods))
+		trailerApi.DELETE("/", server.AddRoute(apis.DeleteGoods))
+	}
+	// 数据中心
+	dataCenterApi := server.RouteGroup(server.ContextUrl("/dataCenter"))
+	{
+		dataCenterApi.GET("/schema/define", server.AddRoute(apis.GetSchemaDefine))
+		dataCenterApi.GET("/schema/detail", server.AddRoute(apis.GetSchemaDetail))
+		dataCenterApi.GET("/schema/list", server.AddRoute(apis.GetSchemaList))
+		dataCenterApi.GET("/schema/defineList", server.AddRoute(apis.GetSchemaDefineList))
+		dataCenterApi.POST("/data/query", server.AddRoute(apis.GetQueryData))
+	}
+	// 硬件接口API
+	HwIFaceApi := server.DefaultApiServer.GetGroup(server.ContextUrl("/hwiface"))
+	{
+		HwIFaceApi.GET("/detail", server.AddRoute(apis.GetHwPortDetail))
+		HwIFaceApi.GET("/list", server.AddRoute(apis.AllHwPorts))
+		HwIFaceApi.POST("/update", server.AddRoute(apis.UpdateHwPortConfig))
+		HwIFaceApi.GET("/refresh", server.AddRoute(apis.RefreshPortList))
+	}
+	//
+	// 系统设置
+	//
+	apis.LoadSystemSettingsAPI()
+
+	/**
+	 * 定时任务
+	 */
+	crontaskApi := server.DefaultApiServer.GetGroup(server.ContextUrl("/crontask"))
+	{
+		crontaskApi.POST("/create", server.AddRouteV2(apis.CreateCronTask))
+		crontaskApi.DELETE("/delete", server.AddRouteV2(apis.DeleteCronTask))
+		crontaskApi.PUT("/update", server.AddRouteV2(apis.UpdateCronTask))
+		crontaskApi.GET("/list", server.AddRouteV2(apis.ListCronTask))
+		crontaskApi.GET("/results/page", server.AddRouteV2(apis.PageCronTaskResult))
+		crontaskApi.GET("/start", server.AddRouteV2(apis.StartTask))
+		crontaskApi.GET("/stop", server.AddRouteV2(apis.StopTask))
+	}
+
+	/**
+	  swagger config
+	  @reference http://localhost:2580/swagger/index.html
+	*/
+	route := server.DefaultApiServer.Route()
+	route.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+}
+
+// ApiServerPlugin Start
+func (hs *ApiServerPlugin) Start(r typex.RuleX) error {
+	hs.ruleEngine = r
+	hs.LoadRoute()
+	glogger.GLogger.Infof("Http server started on :%v", hs.mainConfig.DbPath)
 	return nil
 }
 
-func (hh *HttpApiServer) Stop() error {
+func (hs *ApiServerPlugin) Stop() error {
 	return nil
 }
 
-func (hh *HttpApiServer) Db() *gorm.DB {
-	return hh.sqliteDb
-}
-func (hh *HttpApiServer) PluginMetaInfo() typex.XPluginMetaInfo {
+func (hs *ApiServerPlugin) PluginMetaInfo() typex.XPluginMetaInfo {
 	return typex.XPluginMetaInfo{
-		Name:     "Rulex Base Api Server",
-		Version:  typex.DefaultVersion.Version,
-		Homepage: "https://rulex.pages.dev",
-		HelpLink: "https://rulex.pages.dev",
+		UUID:     hs.uuid,
+		Name:     "RULEX HTTP RESTFul Api Server",
+		Version:  "v1.0.0",
+		Homepage: "https://hootrhino.github.io",
+		HelpLink: "https://hootrhino.github.io",
 		Author:   "wwhai",
 		Email:    "cnwwhai@gmail.com",
 		License:  "MIT",
@@ -248,48 +532,6 @@ func (hh *HttpApiServer) PluginMetaInfo() typex.XPluginMetaInfo {
 * 服务调用接口
 *
  */
-func (cs *HttpApiServer) Service(arg typex.ServiceArg) error {
-	return nil
-}
-
-// --------------------------------------------------------------------------------
-//
-//go:embed  www/*
-var files embed.FS
-
-type WWWFS struct {
-	http.FileSystem
-}
-
-func (f WWWFS) Exists(prefix string, filepath string) bool {
-	_, err := f.Open(path.Join(prefix, filepath))
-	return err == nil
-}
-
-func wwwRoot(dir string) static.ServeFileSystem {
-	if sub, err := fs.Sub(files, path.Join("www", dir)); err == nil {
-		return WWWFS{http.FS(sub)}
-	}
-	return nil
-}
-
-func configHttpServer(hh *HttpApiServer) {
-	hh.ginEngine.Use(hh.Authorize())
-	hh.ginEngine.Use(Cros())
-	hh.ginEngine.Use(static.Serve("/", wwwRoot("")))
-
-	if hh.dbPath == "" {
-		hh.InitDb(_DEFAULT_DB_PATH)
-	} else {
-		hh.InitDb(hh.dbPath)
-	}
-}
-
-/*
-*
-* 拼接URL
-*
- */
-func url(path string) string {
-	return _API_V1_ROOT + path
+func (*ApiServerPlugin) Service(arg typex.ServiceArg) typex.ServiceResult {
+	return typex.ServiceResult{Out: "ApiServerPlugin"}
 }

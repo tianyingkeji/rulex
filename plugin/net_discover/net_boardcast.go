@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"gopkg.in/ini.v1"
@@ -44,11 +44,13 @@ type NetDiscover struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	Neighbors  map[string]gwnode // 邻居
+	uuid       string
 }
 
 func NewNetDiscover() typex.XPlugin {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &NetDiscover{mainConfig: _serverConfig{}, ctx: ctx, cancel: cancel}
+	return &NetDiscover{mainConfig: _serverConfig{},
+		ctx: ctx, cancel: cancel, uuid: "NWT_DISCOVER"}
 }
 
 func (dm *NetDiscover) Init(config *ini.Section) error {
@@ -169,10 +171,11 @@ func calculateCpuPercent(cpus []float64) float64 {
 
 func (hh *NetDiscover) PluginMetaInfo() typex.XPluginMetaInfo {
 	return typex.XPluginMetaInfo{
+		UUID:     hh.uuid,
 		Name:     "NetDiscover",
-		Version:  "0.0.1",
-		Homepage: "www.github.com/i4de/rulex",
-		HelpLink: "www.github.com/i4de/rulex",
+		Version:  "v0.0.1",
+		Homepage: "https://hootrhino.github.io",
+		HelpLink: "https://hootrhino.github.io",
 		Author:   "wwhai",
 		Email:    "cnwwhai@gmail.com",
 		License:  "MIT",
@@ -184,6 +187,6 @@ func (hh *NetDiscover) PluginMetaInfo() typex.XPluginMetaInfo {
 * 服务调用接口
 *
  */
-func (cs *NetDiscover) Service(arg typex.ServiceArg) error {
-	return nil
+func (cs *NetDiscover) Service(arg typex.ServiceArg) typex.ServiceResult {
+	return typex.ServiceResult{}
 }

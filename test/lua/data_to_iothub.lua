@@ -10,7 +10,7 @@ function Failed(error)
 end
 
 -- Actions
-Actions = {function(data)
+Actions = {function(args)
     local ts = rulexlib:TsUnixNano()
     local t = {
         method = 'report',
@@ -22,6 +22,6 @@ Actions = {function(data)
         }
     }
     local jsons = rulexlib:T2J(t)
-    rulexlib:DataToIoTHub(jsons)
-    return true, data
+    data:ToIoTHub(jsons)
+    return true, args
 end}

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 
 	"github.com/nats-io/nats.go"
 )
@@ -76,16 +76,6 @@ func (nt *natsSource) Init(inEndId string, configMap map[string]interface{}) err
 	}
 	return nil
 }
-func (nt *natsSource) Enabled() bool {
-	return true
-}
-
-func (nt *natsSource) Reload() {
-
-}
-
-func (nt *natsSource) Pause() {
-}
 
 func (nt *natsSource) Status() typex.SourceState {
 	return nt.status
@@ -102,7 +92,9 @@ func (nt *natsSource) Details() *typex.InEnd {
 
 func (nt *natsSource) Stop() {
 	nt.status = typex.SOURCE_STOP
-	nt.CancelCTX()
+	if nt.CancelCTX != nil {
+		nt.CancelCTX()
+	}
 	if nt.natsConnector != nil {
 		if nt.natsConnector.IsConnected() {
 			err := nt.natsConnector.Drain()
@@ -115,9 +107,6 @@ func (nt *natsSource) Stop() {
 		}
 	}
 
-}
-func (nt *natsSource) Configs() *typex.XConfig {
-	return &typex.XConfig{}
 }
 
 func (nt *natsSource) DataModels() []typex.XDataModel {

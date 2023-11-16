@@ -10,12 +10,13 @@ import (
 	"time"
 
 	"github.com/go-playground/assert/v2"
-	httpserver "github.com/i4de/rulex/plugin/http_server"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/plugin/http_server/model"
 
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/typex"
 )
 
-var _DataToHttp_luaCase = `function Main(arg) for i = 1, 3, 1 do local err = applib:DataToHttp('httpServer',applib:T2J({temp = 20,humi = 13.45})) applib:log('result =>') applib:Sleep(100) end return 0 end`
+var _DataToHttp_luaCase = `function Main(arg) for i = 1, 3, 1 do local err = applib:DataToHttp('httpServer',applib:T2J({temp = 20,humi = 13.45})) applib:log('result =>') time:Sleep(100) end return 0 end`
 
 func Test_DataToHttp(t *testing.T) {
 	RmUnitTestDbFile(t)
@@ -23,7 +24,7 @@ func Test_DataToHttp(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 
-	hh := httpserver.NewHttpApiServer()
+	hh := httpserver.NewHttpApiServer(engine)
 	// HttpApiServer loaded default
 	if err := engine.LoadPlugin("plugin.http_server", hh); err != nil {
 		t.Fatal(err)
@@ -40,7 +41,8 @@ func Test_DataToHttp(t *testing.T) {
 		},
 	)
 	httpServer.UUID = "httpServer"
-	if err := engine.LoadOutEnd(httpServer); err != nil {
+	ctx, cancelF := typex.NewCCTX() // ,ctx, cancelF
+	if err := engine.LoadOutEndWithCtx(httpServer, ctx, cancelF); err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,8 +88,8 @@ func _createTestApp(t *testing.T) string {
 	}
 	t.Log("UT_createApp: ", string(output))
 	//
-	LoadDB()
-	mApp := []httpserver.MApp{}
+	LoadUnitTestDB()
+	mApp := []model.MApp{}
 	unitTestDB.Raw("SELECT * FROM m_apps").Find(&mApp)
 	assert.Equal(t, 1, len(mApp))
 	t.Log(mApp[0].UUID)
@@ -107,8 +109,8 @@ func _updateTestApp(t *testing.T, uuid string) {
 		t.Fatal(err)
 	}
 	t.Log("UT_updateApp: ", string(output))
-	LoadDB()
-	mApp := []httpserver.MApp{}
+	LoadUnitTestDB()
+	mApp := []model.MApp{}
 	unitTestDB.Raw("SELECT * FROM m_apps").Find(&mApp)
 	assert.Equal(t, 1, len(mApp))
 	t.Log("APP UUID ==> ", mApp[0].UUID)
@@ -127,8 +129,8 @@ func _deleteTestApp(t *testing.T, uuid string) {
 	}
 	t.Log("UT_deleteApp: ", string(output))
 	//
-	LoadDB()
-	mApp := []httpserver.MApp{}
+	LoadUnitTestDB()
+	mApp := []model.MApp{}
 	unitTestDB.Raw("SELECT * FROM m_apps").Find(&mApp)
 	assert.Equal(t, 0, len(mApp))
 }

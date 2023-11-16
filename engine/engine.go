@@ -1,3 +1,18 @@
+// Copyright (C) 2023 wwhai
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package engine
 
 import (
@@ -7,24 +22,37 @@ import (
 	"runtime"
 	"sync"
 
-	lua "github.com/i4de/gopher-lua"
-	"github.com/i4de/rulex/appstack"
-	"github.com/i4de/rulex/core"
-	"github.com/i4de/rulex/device"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/source"
-	"github.com/i4de/rulex/statistics"
-	"github.com/i4de/rulex/target"
-	"github.com/i4de/rulex/trailer"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	lua "github.com/hootrhino/gopher-lua"
+	"github.com/hootrhino/rulex/component/aibase"
+	"github.com/hootrhino/rulex/component/appstack"
+	"github.com/hootrhino/rulex/component/datacenter"
+	"github.com/hootrhino/rulex/component/hwportmanager"
+	"github.com/hootrhino/rulex/component/interdb"
+	"github.com/hootrhino/rulex/component/intermetric"
+	"github.com/hootrhino/rulex/component/interqueue"
+	"github.com/hootrhino/rulex/component/rtspserver"
+	"github.com/hootrhino/rulex/component/trailer"
+	"github.com/hootrhino/rulex/core"
+	"github.com/hootrhino/rulex/device"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/source"
+	"github.com/hootrhino/rulex/target"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 	"github.com/shirou/gopsutil/v3/disk"
 )
 
+/*
+*
+* 全局默认引擎，未来主要留给外部使用
+*
+ */
+var __DefaultRuleEngine typex.RuleX
+
+const __DEFAULT_DB_PATH string = "./rulex.db"
+
 // 规则引擎
 type RuleEngine struct {
-	Trailer           typex.XTrailer       `json:"-"`
-	AppStack          typex.XAppStack      `json:"-"`
 	Hooks             *sync.Map            `json:"hooks"`
 	Rules             *sync.Map            `json:"rules"`
 	Plugins           *sync.Map            `json:"plugins"`
@@ -33,13 +61,13 @@ type RuleEngine struct {
 	Drivers           *sync.Map            `json:"drivers"`
 	Devices           *sync.Map            `json:"devices"`
 	Config            *typex.RulexConfig   `json:"config"`
-	DeviceTypeManager typex.DeviceRegistry `json:"-"`
-	SourceTypeManager typex.SourceRegistry `json:"-"`
-	TargetTypeManager typex.TargetRegistry `json:"-"`
+	DeviceTypeManager typex.DeviceRegistry `json:"-"` // 待迁移组件
+	SourceTypeManager typex.SourceRegistry `json:"-"` // 待迁移组件
+	TargetTypeManager typex.TargetRegistry `json:"-"` // 待迁移组件
 }
 
-func NewRuleEngine(config typex.RulexConfig) typex.RuleX {
-	re := &RuleEngine{
+func InitRuleEngine(config typex.RulexConfig) typex.RuleX {
+	__DefaultRuleEngine := &RuleEngine{
 		DeviceTypeManager: core.NewDeviceTypeManager(),
 		SourceTypeManager: core.NewSourceTypeManager(),
 		TargetTypeManager: core.NewTargetTypeManager(),
@@ -52,86 +80,39 @@ func NewRuleEngine(config typex.RulexConfig) typex.RuleX {
 		Devices:           &sync.Map{},
 		Config:            &config,
 	}
+	// Internal DB
+	interdb.Init(__DefaultRuleEngine, __DEFAULT_DB_PATH)
+	// Load hardware Port Manager
+	hwportmanager.InitHwPortsManager(__DefaultRuleEngine)
+	// Internal Metric
+	intermetric.InitInternalMetric(__DefaultRuleEngine)
 	// trailer
-	re.Trailer = trailer.NewTrailerManager(re)
+	trailer.InitTrailerRuntime(__DefaultRuleEngine)
 	// lua appstack manager
-	re.AppStack = appstack.NewAppStack(re)
-	return re
+	appstack.InitAppStack(__DefaultRuleEngine)
+	// current only support Internal ai
+	aibase.InitAIRuntime(__DefaultRuleEngine)
+	// Internal Queue
+	interqueue.InitDataCacheQueue(__DefaultRuleEngine, core.GlobalConfig.MaxQueueSize)
+	// Data center
+	datacenter.InitDataCenter(__DefaultRuleEngine)
+	return __DefaultRuleEngine
 }
 
 func (e *RuleEngine) Start() *typex.RulexConfig {
-	typex.StartQueue(core.GlobalConfig.MaxQueueSize)
 	e.InitDeviceTypeManager()
 	e.InitSourceTypeManager()
 	e.InitTargetTypeManager()
+	// 内部队列
+	interqueue.InitDataCacheQueue(e, core.GlobalConfig.MaxQueueSize)
+	interqueue.StartDataCacheQueue()
+	// 前后交互组件
+	interqueue.InitInteractQueue(e, core.GlobalConfig.MaxQueueSize)
+	core.InitWebDataPipe(e)
+	core.InitInternalSchemaCache()
+	rtspserver.InitRtspServer()
+	go core.StartWebDataPipe()
 	return e.Config
-}
-
-func (e *RuleEngine) PushQueue(qd typex.QueueData) error {
-	err := typex.DefaultDataCacheQueue.Push(qd)
-	if err != nil {
-		glogger.GLogger.Error("PushQueue error:", err)
-		statistics.IncInFailed()
-	} else {
-		statistics.IncIn()
-	}
-	return err
-}
-func (e *RuleEngine) PushInQueue(in *typex.InEnd, data string) error {
-	qd := typex.QueueData{
-		E:    e,
-		I:    in,
-		O:    nil,
-		Data: data,
-	}
-	err := typex.DefaultDataCacheQueue.Push(qd)
-	if err != nil {
-		glogger.GLogger.Error("PushInQueue error:", err)
-		statistics.IncInFailed()
-	} else {
-		statistics.IncIn()
-	}
-	return err
-}
-
-/*
-*
-* 设备数据入流引擎
-*
- */
-func (e *RuleEngine) PushDeviceQueue(Device *typex.Device, data string) error {
-	qd := typex.QueueData{
-		D:    Device,
-		E:    e,
-		I:    nil,
-		O:    nil,
-		Data: data,
-	}
-	err := typex.DefaultDataCacheQueue.Push(qd)
-	if err != nil {
-		glogger.GLogger.Error("PushInQueue error:", err)
-		statistics.IncInFailed()
-	} else {
-		statistics.IncIn()
-	}
-	return err
-}
-func (e *RuleEngine) PushOutQueue(out *typex.OutEnd, data string) error {
-	qd := typex.QueueData{
-		E:    e,
-		D:    nil,
-		I:    nil,
-		O:    out,
-		Data: data,
-	}
-	err := typex.DefaultDataCacheQueue.Push(qd)
-	if err != nil {
-		glogger.GLogger.Error("PushOutQueue error:", err)
-		statistics.IncInFailed()
-	} else {
-		statistics.IncIn()
-	}
-	return err
 }
 
 func (e *RuleEngine) GetPlugins() *sync.Map {
@@ -152,11 +133,16 @@ func (e *RuleEngine) GetConfig() *typex.RulexConfig {
 // Stop
 func (e *RuleEngine) Stop() {
 	glogger.GLogger.Info("[*] Ready to stop rulex")
+	// 所有的APP停了
+	appstack.Stop()
+	// 外挂停了
+	trailer.Stop()
+	// 资源
 	e.InEnds.Range(func(key, value interface{}) bool {
 		inEnd := value.(*typex.InEnd)
 		if inEnd.Source != nil {
 			glogger.GLogger.Info("Stop InEnd:", inEnd.Name, inEnd.UUID)
-			e.GetInEnd(inEnd.UUID).SetState(typex.SOURCE_DOWN)
+			e.GetInEnd(inEnd.UUID).State = typex.SOURCE_STOP
 			inEnd.Source.Stop()
 			if inEnd.Source.Driver() != nil {
 				inEnd.Source.Driver().Stop()
@@ -169,9 +155,10 @@ func (e *RuleEngine) Stop() {
 	e.OutEnds.Range(func(key, value interface{}) bool {
 		outEnd := value.(*typex.OutEnd)
 		if outEnd.Target != nil {
-			glogger.GLogger.Info("Stop Target:", outEnd.Name, outEnd.UUID)
+			glogger.GLogger.Info("Stop NewTarget:", outEnd.Name, outEnd.UUID)
+			e.GetOutEnd(outEnd.UUID).State = typex.SOURCE_STOP
 			outEnd.Target.Stop()
-			glogger.GLogger.Info("Stop Target:", outEnd.Name, outEnd.UUID, " Successfully")
+			glogger.GLogger.Info("Stop NewTarget:", outEnd.Name, outEnd.UUID, " Successfully")
 		}
 		return true
 	})
@@ -187,14 +174,12 @@ func (e *RuleEngine) Stop() {
 	e.Devices.Range(func(key, value interface{}) bool {
 		Device := value.(*typex.Device)
 		glogger.GLogger.Info("Stop Device:", Device.Name)
+		e.GetDevice(Device.UUID).State = typex.DEV_STOP
 		Device.Device.Stop()
 		glogger.GLogger.Info("Stop Device:", Device.Name, " Successfully")
 		return true
 	})
-	// 外挂停了
-	e.Trailer.Stop()
-	// 所有的APP停了
-	e.AppStack.Stop()
+
 	glogger.GLogger.Info("[√] Stop Rulex successfully")
 	if err := glogger.Close(); err != nil {
 		fmt.Println("Close logger error: ", err)
@@ -203,7 +188,7 @@ func (e *RuleEngine) Stop() {
 
 // 核心功能: Work, 主要就是推流进队列
 func (e *RuleEngine) WorkInEnd(in *typex.InEnd, data string) (bool, error) {
-	if err := e.PushInQueue(in, data); err != nil {
+	if err := interqueue.DefaultDataCacheQueue.PushInQueue(in, data); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -211,7 +196,7 @@ func (e *RuleEngine) WorkInEnd(in *typex.InEnd, data string) (bool, error) {
 
 // 核心功能: Work, 主要就是推流进队列
 func (e *RuleEngine) WorkDevice(Device *typex.Device, data string) (bool, error) {
-	if err := e.PushDeviceQueue(Device, data); err != nil {
+	if err := interqueue.DefaultDataCacheQueue.PushDeviceQueue(Device, data); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -226,15 +211,6 @@ func (e *RuleEngine) RunSourceCallbacks(in *typex.InEnd, callbackArgs string) {
 	// 执行来自资源的脚本
 	for _, rule := range in.BindRules {
 		if rule.Status == typex.RULE_RUNNING {
-			if rule.Type == "expr" {
-				// 0.5 增加expr库
-				// Expr 不执行 lua 的回调脚本
-				// ENV 暂时不加库, 留到后期扩展
-				_, err := core.ExecuteExpression(&rule, map[string]interface{}{})
-				if err != nil {
-					glogger.GLogger.Error("RunLuaCallbacks error:", err)
-				}
-			}
 			if rule.Type == "lua" {
 				_, err := core.ExecuteActions(&rule, lua.LString(callbackArgs))
 				if err != nil {
@@ -263,9 +239,6 @@ func (e *RuleEngine) RunSourceCallbacks(in *typex.InEnd, callbackArgs string) {
 func (e *RuleEngine) RunDeviceCallbacks(Device *typex.Device, callbackArgs string) {
 	for _, rule := range Device.BindRules {
 		if rule.Status == typex.RULE_RUNNING {
-			if rule.Type == "expr" {
-				// 5.0 增加expr的库
-			}
 			if rule.Type == "lua" {
 				_, err := core.ExecuteActions(&rule, lua.LString(callbackArgs))
 				if err != nil {
@@ -285,42 +258,6 @@ func (e *RuleEngine) RunDeviceCallbacks(Device *typex.Device, callbackArgs strin
 
 		}
 	}
-}
-
-// ┌──────┐    ┌──────┐    ┌──────┐
-// │ Init ├───►│ Load ├───►│ Stop │
-// └──────┘    └──────┘    └──────┘
-func (e *RuleEngine) LoadPlugin(sectionK string, p typex.XPlugin) error {
-	section := utils.GetINISection(core.INIPath, sectionK)
-	key, err1 := section.GetKey("enable")
-	if err1 != nil {
-		return err1
-	}
-	enable, err2 := key.Bool()
-	if err2 != nil {
-		return err2
-	}
-	if !enable {
-		glogger.GLogger.Infof("Plugin is not enable:%s", p.PluginMetaInfo().Name)
-		return nil
-	}
-
-	if err := p.Init(section); err != nil {
-		return err
-	}
-	_, ok := e.Plugins.Load(p.PluginMetaInfo().Name)
-	if ok {
-		return errors.New("plugin already installed:" + p.PluginMetaInfo().Name)
-	}
-
-	if err := p.Start(e); err != nil {
-		return err
-	}
-
-	e.Plugins.Store(p.PluginMetaInfo().Name, p)
-	glogger.GLogger.Infof("Plugin start successfully:[%v]", p.PluginMetaInfo().Name)
-	return nil
-
 }
 
 // LoadHook
@@ -394,7 +331,7 @@ func (e *RuleEngine) RemoveOutEnd(uuid string) {
 			e.OutEnds.Delete(uuid)
 			outEnd = nil
 		}
-		glogger.GLogger.Infof("InEnd [%v] has been deleted", uuid)
+		glogger.GLogger.Infof("OutEnd [%v] has been deleted", uuid)
 	}
 }
 
@@ -431,7 +368,7 @@ func (e *RuleEngine) SnapshotDump() string {
 	e.AllDevices().Range(func(key, value interface{}) bool {
 		Device := value.(*typex.Device)
 		if Device.Device.Driver() != nil {
-			drivers = append(drivers, Device.Device.Driver())
+			devices = append(devices, Device.Device.Driver())
 		}
 		return true
 	})
@@ -457,7 +394,7 @@ func (e *RuleEngine) SnapshotDump() string {
 		"outends":    outends,
 		"devices":    devices,
 		"drivers":    drivers,
-		"statistics": statistics.AllStatistics(),
+		"statistics": intermetric.GetMetric(),
 		"system":     system,
 		"config":     core.GlobalConfig,
 	}
@@ -468,57 +405,9 @@ func (e *RuleEngine) SnapshotDump() string {
 	return string(b)
 }
 
-/*
-*
-* 加载外部程序
-*
- */
-func (e *RuleEngine) LoadGoods(goods typex.Goods) error {
-	return e.Trailer.Fork(goods)
-}
-
-// 删除外部驱动
-func (e *RuleEngine) RemoveGoods(uuid string) error {
-	if e.GetGoods(uuid) != nil {
-		e.Trailer.Remove(uuid)
-		return nil
-	}
-	return fmt.Errorf("goods %v not exists", uuid)
-}
-
-// 所有外部驱动
-func (e *RuleEngine) AllGoods() *sync.Map {
-	return e.Trailer.AllGoods()
-}
-
-// 获取某个外部驱动信息
-func (e *RuleEngine) GetGoods(uuid string) *typex.Goods {
-	goodsProcess := e.Trailer.Get(uuid)
-	goods := typex.Goods{
-		UUID:        goodsProcess.Uuid,
-		Addr:        goodsProcess.Addr,
-		Description: goodsProcess.Description,
-		Args:        goodsProcess.Args,
-	}
-	return &goods
-}
-
-// 取一个进程
-func (e *RuleEngine) PickUpProcess(uuid string) *typex.GoodsProcess {
-	return e.Trailer.Get(uuid)
-}
-
 // 重启源
 func (e *RuleEngine) RestartInEnd(uuid string) error {
-	if value, ok := e.InEnds.Load(uuid); ok {
-		o := (value.(*typex.InEnd))
-		if o.State == typex.SOURCE_UP {
-			o.Source.Stop()
-		}
-		if err := e.LoadInEnd(o); err != nil {
-			glogger.GLogger.Error("InEnd load failed:", err)
-			return err
-		}
+	if _, ok := e.InEnds.Load(uuid); ok {
 		return nil
 	}
 	return errors.New("InEnd:" + uuid + "not exists")
@@ -526,15 +415,7 @@ func (e *RuleEngine) RestartInEnd(uuid string) error {
 
 // 重启目标
 func (e *RuleEngine) RestartOutEnd(uuid string) error {
-	if value, ok := e.OutEnds.Load(uuid); ok {
-		o := (value.(*typex.OutEnd))
-		if o.State == typex.SOURCE_UP {
-			o.Target.Stop()
-		}
-		if err := e.LoadOutEnd(o); err != nil {
-			glogger.GLogger.Error("OutEnd load failed:", err)
-			return err
-		}
+	if _, ok := e.OutEnds.Load(uuid); ok {
 		return nil
 	}
 	return errors.New("OutEnd:" + uuid + "not exists")
@@ -542,15 +423,7 @@ func (e *RuleEngine) RestartOutEnd(uuid string) error {
 
 // 重启设备
 func (e *RuleEngine) RestartDevice(uuid string) error {
-	if value, ok := e.Devices.Load(uuid); ok {
-		o := (value.(*typex.Device))
-		if o.State == typex.DEV_UP {
-			o.Device.Stop()
-		}
-		if err := e.LoadDevice(o); err != nil {
-			glogger.GLogger.Error("Device load failed:", err)
-			return err
-		}
+	if _, ok := e.Devices.Load(uuid); ok {
 		return nil
 	}
 	return errors.New("Device:" + uuid + "not exists")
@@ -562,64 +435,100 @@ func (e *RuleEngine) RestartDevice(uuid string) error {
 *
  */
 func (e *RuleEngine) InitDeviceTypeManager() error {
+	e.DeviceTypeManager.Register(typex.GENERIC_CAMERA,
+		&typex.XConfig{
+			Engine:    e,
+			NewDevice: device.NewVideoCamera,
+		},
+	)
+	e.DeviceTypeManager.Register(typex.RHINOPI_IR,
+		&typex.XConfig{
+			Engine:    e,
+			NewDevice: device.NewIRDevice,
+		},
+	)
 	e.DeviceTypeManager.Register(typex.TSS200V02,
 		&typex.XConfig{
-			Engine: e,
-			Device: device.NewTS200Sensor(e),
+			Engine:    e,
+			NewDevice: device.NewTS200Sensor,
 		},
 	)
 	e.DeviceTypeManager.Register(typex.YK08_RELAY,
 		&typex.XConfig{
-			Engine: e,
-			Device: device.NewYK8Controller(e),
+			Engine:    e,
+			NewDevice: device.NewYK8Controller,
 		},
 	)
 	e.DeviceTypeManager.Register(typex.RTU485_THER,
 		&typex.XConfig{
-			Engine: e,
-			Device: device.NewRtu485Ther(e),
+			Engine:    e,
+			NewDevice: device.NewRtu485Ther,
 		},
 	)
 	e.DeviceTypeManager.Register(typex.S1200PLC,
 		&typex.XConfig{
-			Engine: e,
-			Device: device.NewS1200plc(e),
+			Engine:    e,
+			NewDevice: device.NewS1200plc,
 		},
 	)
 	e.DeviceTypeManager.Register(typex.GENERIC_MODBUS,
 		&typex.XConfig{
-			Engine: e,
-			Device: device.NewGenericModbusDevice(e),
+			Engine:    e,
+			NewDevice: device.NewGenericModbusDevice,
 		},
 	)
 	e.DeviceTypeManager.Register(typex.GENERIC_UART,
 		&typex.XConfig{
-			Engine: e,
-			Device: device.NewGenericUartDevice(e),
+			Engine:    e,
+			NewDevice: device.NewGenericUartDevice,
 		},
 	)
 	e.DeviceTypeManager.Register(typex.GENERIC_SNMP,
 		&typex.XConfig{
-			Engine: e,
-			Device: device.NewGenericSnmpDevice(e),
+			Engine:    e,
+			NewDevice: device.NewGenericSnmpDevice,
 		},
 	)
 	e.DeviceTypeManager.Register(typex.USER_G776,
 		&typex.XConfig{
-			Engine: e,
-			Device: device.NewUsrG776DTU(e),
+			Engine:    e,
+			NewDevice: device.NewUsrG776DTU,
 		},
 	)
 	e.DeviceTypeManager.Register(typex.ICMP_SENDER,
 		&typex.XConfig{
-			Engine: e,
-			Device: device.NewIcmpSender(e),
+			Engine:    e,
+			NewDevice: device.NewIcmpSender,
 		},
 	)
 	e.DeviceTypeManager.Register(typex.GENERIC_PROTOCOL,
 		&typex.XConfig{
-			Engine: e,
-			Device: device.NewCustomProtocolDevice(e),
+			Engine:    e,
+			NewDevice: device.NewCustomProtocolDevice,
+		},
+	)
+	e.DeviceTypeManager.Register(typex.GENERIC_OPCUA,
+		&typex.XConfig{
+			Engine:    e,
+			NewDevice: device.NewGenericOpcuaDevice,
+		},
+	)
+	e.DeviceTypeManager.Register(typex.GENERIC_CAMERA,
+		&typex.XConfig{
+			Engine:    e,
+			NewDevice: device.NewVideoCamera,
+		},
+	)
+	e.DeviceTypeManager.Register(typex.GENERIC_AIS_RECEIVER,
+		&typex.XConfig{
+			Engine:    e,
+			NewDevice: device.NewAISDeviceMaster,
+		},
+	)
+	e.DeviceTypeManager.Register(typex.GENERIC_BACNET_IP,
+		&typex.XConfig{
+			Engine:    e,
+			NewDevice: device.NewGenericBacnetIpDevice,
 		},
 	)
 	return nil
@@ -633,56 +542,44 @@ func (e *RuleEngine) InitDeviceTypeManager() error {
 func (e *RuleEngine) InitSourceTypeManager() error {
 	e.SourceTypeManager.Register(typex.MQTT,
 		&typex.XConfig{
-			Engine: e,
-			Source: source.NewMqttInEndSource(e),
+			Engine:    e,
+			NewSource: source.NewMqttInEndSource,
 		},
 	)
 	e.SourceTypeManager.Register(typex.HTTP,
 		&typex.XConfig{
-			Engine: e,
-			Source: source.NewHttpInEndSource(e),
+			Engine:    e,
+			NewSource: source.NewHttpInEndSource,
 		},
 	)
 	e.SourceTypeManager.Register(typex.COAP,
 		&typex.XConfig{
-			Engine: e,
-			Source: source.NewCoAPInEndSource(e),
+			Engine:    e,
+			NewSource: source.NewCoAPInEndSource,
 		},
 	)
 	e.SourceTypeManager.Register(typex.GRPC,
 		&typex.XConfig{
-			Engine: e,
-			Source: source.NewGrpcInEndSource(e),
+			Engine:    e,
+			NewSource: source.NewGrpcInEndSource,
 		},
 	)
 	e.SourceTypeManager.Register(typex.NATS_SERVER,
 		&typex.XConfig{
-			Engine: e,
-			Source: source.NewNatsSource(e),
+			Engine:    e,
+			NewSource: source.NewNatsSource,
 		},
 	)
 	e.SourceTypeManager.Register(typex.RULEX_UDP,
 		&typex.XConfig{
-			Engine: e,
-			Source: source.NewUdpInEndSource(e),
-		},
-	)
-	e.SourceTypeManager.Register(typex.TENCENT_IOT_HUB,
-		&typex.XConfig{
-			Engine: e,
-			Source: source.NewTencentIothubSource(e),
+			Engine:    e,
+			NewSource: source.NewUdpInEndSource,
 		},
 	)
 	e.SourceTypeManager.Register(typex.GENERIC_IOT_HUB,
 		&typex.XConfig{
-			Engine: e,
-			Source: source.NewGenericIothubSource(e),
-		},
-	)
-	e.SourceTypeManager.Register(typex.ITHINGS_IOT_HUB,
-		&typex.XConfig{
-			Engine: e,
-			Source: source.NewIThingsSource(e),
+			Engine:    e,
+			NewSource: source.NewIoTHubSource,
 		},
 	)
 	return nil
@@ -696,50 +593,62 @@ func (e *RuleEngine) InitSourceTypeManager() error {
 func (e *RuleEngine) InitTargetTypeManager() error {
 	e.TargetTypeManager.Register(typex.MONGO_SINGLE,
 		&typex.XConfig{
-			Engine: e,
-			Target: target.NewMongoTarget(e),
+			Engine:    e,
+			NewTarget: target.NewMongoTarget,
 		},
 	)
 	e.TargetTypeManager.Register(typex.MQTT_TARGET,
 		&typex.XConfig{
-			Engine: e,
-			Target: target.NewMqttTarget(e),
+			Engine:    e,
+			NewTarget: target.NewMqttTarget,
 		},
 	)
 	e.TargetTypeManager.Register(typex.NATS_TARGET,
 		&typex.XConfig{
-			Engine: e,
-			Target: target.NewNatsTarget(e),
+			Engine:    e,
+			NewTarget: target.NewNatsTarget,
 		},
 	)
 	e.TargetTypeManager.Register(typex.HTTP_TARGET,
 		&typex.XConfig{
-			Engine: e,
-			Target: target.NewHTTPTarget(e),
+			Engine:    e,
+			NewTarget: target.NewHTTPTarget,
 		},
 	)
 	e.TargetTypeManager.Register(typex.TDENGINE_TARGET,
 		&typex.XConfig{
-			Engine: e,
-			Target: target.NewTdEngineTarget(e),
+			Engine:    e,
+			NewTarget: target.NewTdEngineTarget,
 		},
 	)
 	e.TargetTypeManager.Register(typex.GRPC_CODEC_TARGET,
 		&typex.XConfig{
-			Engine: e,
-			Target: target.NewCodecTarget(e),
+			Engine:    e,
+			NewTarget: target.NewCodecTarget,
 		},
 	)
 	e.TargetTypeManager.Register(typex.UDP_TARGET,
 		&typex.XConfig{
-			Engine: e,
-			Target: target.NewUdpTarget(e),
+			Engine:    e,
+			NewTarget: target.NewUdpTarget,
 		},
 	)
 	e.TargetTypeManager.Register(typex.SQLITE_TARGET,
 		&typex.XConfig{
-			Engine: e,
-			Target: target.NewSqliteTarget(e),
+			Engine:    e,
+			NewTarget: target.NewSqliteTarget,
+		},
+	)
+	e.TargetTypeManager.Register(typex.USER_G776_TARGET,
+		&typex.XConfig{
+			Engine:    e,
+			NewTarget: target.NewUserG776,
+		},
+	)
+	e.TargetTypeManager.Register(typex.TCP_TRANSPORT,
+		&typex.XConfig{
+			Engine:    e,
+			NewTarget: target.NewTTcpTarget,
 		},
 	)
 	return nil

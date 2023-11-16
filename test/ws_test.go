@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/i4de/rulex/glogger"
+	"github.com/hootrhino/rulex/glogger"
 )
 
 func Test_WS(t *testing.T) {
@@ -46,7 +46,6 @@ func ws() {
 	defer ticker.Stop()
 
 	for {
-		<-ticker.C
 		select {
 		case <-done:
 			ticker.Stop()
@@ -69,6 +68,8 @@ func ws() {
 			case <-time.After(time.Second):
 			}
 			return
+
 		}
+		<-ticker.C
 	}
 }

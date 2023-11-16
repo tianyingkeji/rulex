@@ -4,21 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"runtime"
 	"strings"
 
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+
 	"golang.org/x/sys/unix"
 	"gopkg.in/ini.v1"
 )
-
-const banner string = `
-     __  _           _       ___ ___ _   _
-| | (_  |_) __ |\/| / \ |\ |  |   | / \ |_)
-|_| __) |_)    |  | \_/ | \| _|_  | \_/ | \
-`
 
 /*
 *
@@ -26,10 +20,11 @@ const banner string = `
 *
  */
 type usbMonitor struct {
+	uuid string
 }
 
 func NewUsbMonitor() typex.XPlugin {
-	return &usbMonitor{}
+	return &usbMonitor{uuid: "USB_EVENT_MONITOR"}
 }
 func (usbm *usbMonitor) Init(_ *ini.Section) error {
 	return nil
@@ -99,7 +94,6 @@ func (usbm *usbMonitor) Start(_ typex.RuleX) error {
 		}
 
 	}(typex.GCTX)
-	fmt.Println(banner)
 	return nil
 }
 func parseType(data []byte, len int) string {
@@ -165,10 +159,11 @@ func (usbm *usbMonitor) Stop() error {
 
 func (usbm *usbMonitor) PluginMetaInfo() typex.XPluginMetaInfo {
 	return typex.XPluginMetaInfo{
-		Name:     "USB Monitor",
-		Version:  "0.0.1",
-		Homepage: "www.github.com/i4de/rulex",
-		HelpLink: "www.github.com/i4de/rulex",
+		UUID:     usbm.uuid,
+		Name:     "USB Hot Plugin Monitor",
+		Version:  "v0.0.1",
+		Homepage: "https://hootrhino.github.io",
+		HelpLink: "https://hootrhino.github.io",
 		Author:   "wwhai",
 		Email:    "cnwwhai@gmail.com",
 		License:  "MIT",
@@ -180,6 +175,6 @@ func (usbm *usbMonitor) PluginMetaInfo() typex.XPluginMetaInfo {
 * 服务调用接口
 *
  */
-func (cs *usbMonitor) Service(arg typex.ServiceArg) error {
-	return nil
+func (cs *usbMonitor) Service(arg typex.ServiceArg) typex.ServiceResult {
+	return typex.ServiceResult{}
 }

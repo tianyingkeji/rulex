@@ -4,17 +4,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/i4de/rulex/glogger"
-	httpserver "github.com/i4de/rulex/plugin/http_server"
-	mqttserver "github.com/i4de/rulex/plugin/mqtt_server"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/glogger"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
+	mqttserver "github.com/hootrhino/rulex/plugin/mqtt_server"
+	"github.com/hootrhino/rulex/typex"
 )
 
 func Test_dac_call_device(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 
-	hh := httpserver.NewHttpApiServer()
+	hh := httpserver.NewHttpApiServer(engine)
 	// HttpApiServer loaded default
 	if err := engine.LoadPlugin("plugin.http_server", hh); err != nil {
 		glogger.GLogger.Fatal("NewHttpApiServer load failed:", err)
@@ -26,9 +26,9 @@ func Test_dac_call_device(t *testing.T) {
 		t.Fatal(err)
 	}
 	GMODBUS := typex.NewDevice(typex.GENERIC_MODBUS,
-		"GENERIC_MODBUS", "GENERIC_MODBUS", "", map[string]interface{}{
+		"GENERIC_MODBUS", "GENERIC_MODBUS", map[string]interface{}{
 			"mode": "TCP",
-			// "mode":      "RTU",
+			// "mode":      "UART",
 			"timeout":   10,
 			"frequency": 5,
 			"config": map[string]interface{}{
@@ -51,7 +51,8 @@ func Test_dac_call_device(t *testing.T) {
 			},
 		})
 	GMODBUS.UUID = "GMODBUS"
-	if err := engine.LoadDevice(GMODBUS); err != nil {
+	ctx, cancelF := typex.NewCCTX()
+	if err := engine.LoadDeviceWithCtx(GMODBUS, ctx, cancelF); err != nil {
 		t.Fatal(err)
 	}
 	rule := typex.NewRule(engine,
@@ -63,11 +64,11 @@ func Test_dac_call_device(t *testing.T) {
 		`function Success() print("[LUA Success Callback]=> OK") end`,
 		`
 		Actions = {
-			function(data)
+			function(args)
 				print("data=", data)
 				local r, error = device:DCACall("GMODBUS", "get_status", {1, 2, 3})
 				print("r=", r, ", error=", error)
-				return true, data
+				return true, args
 			end
 		}`,
 		`function Failed(error) print("[LUA Failed Callback]", error) end`)

@@ -2,12 +2,13 @@ package test
 
 import (
 	"context"
-	"github.com/i4de/rulex/glogger"
-	httpserver "github.com/i4de/rulex/plugin/http_server"
-	"github.com/i4de/rulex/rulexrpc"
-	"github.com/i4de/rulex/typex"
 	"testing"
 	"time"
+
+	"github.com/hootrhino/rulex/component/rulexrpc"
+	"github.com/hootrhino/rulex/glogger"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/typex"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -17,7 +18,7 @@ func Test_Get_RULE_ID(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 
-	hh := httpserver.NewHttpApiServer()
+	hh := httpserver.NewHttpApiServer(engine)
 	// HttpApiServer loaded default
 	if err := engine.LoadPlugin("plugin.http_server", hh); err != nil {
 		glogger.GLogger.Fatal("Rule load failed:", err)
@@ -26,8 +27,8 @@ func Test_Get_RULE_ID(t *testing.T) {
 	grpcInend := typex.NewInEnd("GRPC", "Rulex Grpc InEnd", "Rulex Grpc InEnd", map[string]interface{}{
 		"port": 2581,
 	})
-
-	if err := engine.LoadInEnd(grpcInend); err != nil {
+	ctx, cancelF := typex.NewCCTX() // ,ctx, cancelF
+	if err := engine.LoadInEndWithCtx(grpcInend, ctx, cancelF); err != nil {
 		glogger.GLogger.Error("Rule load failed:", err)
 	}
 
@@ -40,10 +41,10 @@ func Test_Get_RULE_ID(t *testing.T) {
 		`function Success() print("[LUA Success Callback]=> OK") end`,
 		`
 		Actions = {
-			function(data)
+			function(args)
 				print('rulexlib:Time() =================> ', rulexlib:Time())
 				print('rulexlib:RUUID() =================> ', rulexlib:RUUID())
-				return true, data
+				return true, args
 			end
 		}`,
 		`function Failed(error) print("[LUA Failed Callback]", error) end`)

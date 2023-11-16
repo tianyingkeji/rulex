@@ -5,22 +5,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/i4de/rulex/core"
-	"github.com/i4de/rulex/engine"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/plugin/demo_plugin"
-	httpserver "github.com/i4de/rulex/plugin/http_server"
-	"github.com/i4de/rulex/rulexrpc"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/component/rulexrpc"
+	"github.com/hootrhino/rulex/core"
+	"github.com/hootrhino/rulex/engine"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/plugin/demo_plugin"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/typex"
 
 	"google.golang.org/grpc"
 )
 
 func Test_Binary_LUA_Parse(t *testing.T) {
-	engine := engine.NewRuleEngine(core.InitGlobalConfig("conf/rulex.ini"))
+	engine := engine.InitRuleEngine(core.InitGlobalConfig("conf/rulex.ini"))
 	engine.Start()
 
-	hh := httpserver.NewHttpApiServer()
+	hh := httpserver.NewHttpApiServer(engine)
 
 	// HttpApiServer loaded default
 	if err := engine.LoadPlugin("plugin.http_server", hh); err != nil {
@@ -34,7 +34,8 @@ func Test_Binary_LUA_Parse(t *testing.T) {
 	grpcInend := typex.NewInEnd("GRPC", "Rulex Grpc InEnd", "Rulex Grpc InEnd", map[string]interface{}{
 		"port": "2581",
 	})
-	if err := engine.LoadInEnd(grpcInend); err != nil {
+	ctx, cancelF := typex.NewCCTX()
+	if err := engine.LoadInEndWithCtx(grpcInend, ctx, cancelF); err != nil {
 		glogger.GLogger.Error("Rule load failed:", err)
 	}
 	//
@@ -52,11 +53,11 @@ func Test_Binary_LUA_Parse(t *testing.T) {
 			--        ┌───────────────────────────────────────────────┐
 			-- data = |00 00 00 01|00 00 00 02|00 00 00 03|00 00 00 04|
 			--        └───────────────────────────────────────────────┘
-			function(data)
+			function(args)
 				local json = require("json")
 				local V6 = json.encode(rulexlib:MB("<a:8 b:8 c:8 d:8", data, false))
 				print("[LUA Actions Callback 5, rulex.MatchBinary] ==>", V6)
-				return true, data
+				return true, args
 			end
 		}`,
 		`function Failed(error) print("[LUA Failed Callback]", error) end`)

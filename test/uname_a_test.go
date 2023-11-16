@@ -2,10 +2,11 @@ package test
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/go-ini/ini"
-	"github.com/i4de/rulex/glogger"
+	"github.com/hootrhino/rulex/glogger"
 )
 
 func ReadOSRelease(configfile string) *ini.File {
@@ -31,4 +32,7 @@ func ReadOSRelease(configfile string) *ini.File {
 func Test_uname_a(t *testing.T) {
 	OSInfo := ReadOSRelease("/etc/os-release")
 	fmt.Print(OSInfo.Section(""))
+}
+func Test_Mktemp_a(t *testing.T) {
+	t.Log(os.MkdirTemp("./data", ""))
 }

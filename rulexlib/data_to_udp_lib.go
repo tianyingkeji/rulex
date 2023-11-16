@@ -1,14 +1,14 @@
 package rulexlib
 
 import (
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/typex"
 
-	lua "github.com/i4de/gopher-lua"
+	lua "github.com/hootrhino/gopher-lua"
 )
 
 /*
 *
-* 数据转发到 UDP：local err: = rulexlib:DataToUdp(uuid, data)
+* 数据转发到 UDP：local err: = data:ToUdp(uuid, data)
 *
  */
 func DataToUdp(rx typex.RuleX) func(*lua.LState) int {

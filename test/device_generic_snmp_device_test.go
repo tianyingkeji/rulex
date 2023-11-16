@@ -1,34 +1,27 @@
 package test
 
 import (
-	"github.com/i4de/rulex/glogger"
-	httpserver "github.com/i4de/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/glogger"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
 
 	"testing"
 	"time"
 
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/typex"
 )
 
-// {
-//     "PCHost":"127.0.0.1",
-//     "PCDescription":"Hardware: Intel64 Family",
-//     "PCUserName":"wangwh1-868.infore.com",
-//     "PCHardIFaces":[],
-//     "PCTotalMemory":33262700
-// }
 func Test_Generic_snmp_device(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 
-	hh := httpserver.NewHttpApiServer()
+	hh := httpserver.NewHttpApiServer(engine)
 	// HttpApiServer loaded default
 	if err := engine.LoadPlugin("plugin.http_server", hh); err != nil {
 		glogger.GLogger.Fatal("Rule load failed:", err)
 		t.Fatal(err)
 	}
 	GENERIC_SNMP := typex.NewDevice(typex.GENERIC_SNMP,
-		"GENERIC_SNMP", "GENERIC_SNMP", "", map[string]interface{}{
+		"GENERIC_SNMP", "GENERIC_SNMP", map[string]interface{}{
 			"timeout":   10,
 			"frequency": 5,
 			"target":    "127.0.0.1",
@@ -37,8 +30,8 @@ func Test_Generic_snmp_device(t *testing.T) {
 			"transport": "udp",
 			"version":   3,
 		})
-
-	if err := engine.LoadDevice(GENERIC_SNMP); err != nil {
+	ctx, cancelF := typex.NewCCTX()
+	if err := engine.LoadDeviceWithCtx(GENERIC_SNMP, ctx, cancelF); err != nil {
 		t.Fatal(err)
 	}
 	rule := typex.NewRule(engine,
@@ -50,9 +43,9 @@ func Test_Generic_snmp_device(t *testing.T) {
 		`function Success() print("[LUA Success Callback]=> OK") end`,
 		`
 		Actions = {
-			function(data)
+			function(args)
 			    print(data)
-				return true, data
+				return true, args
 			end
 		}`,
 		`function Failed(error) print("[LUA Failed Callback]", error) end`)

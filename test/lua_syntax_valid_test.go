@@ -6,15 +6,15 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/i4de/rulex/core"
-	"github.com/i4de/rulex/engine"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/core"
+	"github.com/hootrhino/rulex/engine"
+	"github.com/hootrhino/rulex/typex"
 )
 
 func TestLuaSyntax1(t *testing.T) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGINT, syscall.SIGABRT)
-	engine := engine.NewRuleEngine(core.InitGlobalConfig("conf/rulex.ini"))
+	engine := engine.InitRuleEngine(core.InitGlobalConfig("conf/rulex.ini"))
 	engine.Start()
 	// Grpc Inend
 	grpcInend := typex.NewInEnd("GRPC", "Rulex Grpc InEnd", "Rulex Grpc InEnd", map[string]interface{}{
@@ -29,13 +29,13 @@ func TestLuaSyntax1(t *testing.T) {
 		`function Success() print("[LUA Success]==========================> OK") end`,
 		`
 		Actions = {
-			function(data)
+			function(args)
 			    print("[LUA Actions Callback]==========================> ", data)
-				return true, data
+				return true, args
 			end,
-			function(data)
+			function(args)
 			    print("[LUA Actions Callback]==========================> ", data)
-				return true, data
+				return true, args
 			end
 		}`,
 		`function Failed(error) print("[LUA Failed]==========================> OK", error) end`,
@@ -46,7 +46,7 @@ func TestLuaSyntax1(t *testing.T) {
 func TestLuaSyntax2(t *testing.T) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGINT, syscall.SIGABRT)
-	engine := engine.NewRuleEngine(core.InitGlobalConfig("conf/rulex.ini"))
+	engine := engine.InitRuleEngine(core.InitGlobalConfig("conf/rulex.ini"))
 	engine.Start()
 	// Grpc Inend
 	grpcInend := typex.NewInEnd("GRPC", "Rulex Grpc InEnd", "Rulex Grpc InEnd", map[string]interface{}{
@@ -61,17 +61,17 @@ func TestLuaSyntax2(t *testing.T) {
 		`function Success() print("[LUA Success]==========================> OK") end`,
 		`
 		Actions = {
-			function(data)
+			function(args)
 				print("[LUA Actions Callback]==========================> ", data)
-				return true, data
+				return true, args
 		    end,
-			function(data)
+			function(args)
 			    print("[LUA Actions Callback]==========================> ", data)
-				return true, data
+				return true, args
 			end,,,,,++1122++33++44
-			function(data)
+			function(args)
 			    print("[LUA Actions Callback]==========================> ", data)
-				return true, data
+				return true, args
 			end
 		}`,
 		`function Failed(error) print("[LUA Failed]==========================> OK", error) end`,

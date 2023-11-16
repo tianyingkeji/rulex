@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/rulexrpc"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/component/rulexrpc"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 
 	"google.golang.org/grpc"
 )
@@ -81,29 +81,21 @@ func (g *grpcInEndSource) DataModels() []typex.XDataModel {
 
 func (g *grpcInEndSource) Stop() {
 	g.status = typex.SOURCE_STOP
-	g.CancelCTX()
-
+	if g.CancelCTX != nil {
+		g.CancelCTX()
+	}
 	if g.rpcServer != nil {
 		g.rpcServer.Stop()
 		g.rpcServer = nil
 	}
 
 }
-func (g *grpcInEndSource) Reload() {
 
-}
-func (g *grpcInEndSource) Pause() {
-
-}
 func (g *grpcInEndSource) Status() typex.SourceState {
 	return g.status
 }
 
 func (g *grpcInEndSource) Test(inEndId string) bool {
-	return true
-}
-
-func (g *grpcInEndSource) Enabled() bool {
 	return true
 }
 
@@ -113,9 +105,6 @@ func (g *grpcInEndSource) Details() *typex.InEnd {
 
 func (*grpcInEndSource) Driver() typex.XExternalDriver {
 	return nil
-}
-func (*grpcInEndSource) Configs() *typex.XConfig {
-	return &typex.XConfig{}
 }
 
 func (r *RulexRpcServer) Work(ctx context.Context, in *rulexrpc.Data) (*rulexrpc.Response, error) {

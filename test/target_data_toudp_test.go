@@ -10,14 +10,15 @@ import (
 	"time"
 
 	"github.com/go-playground/assert/v2"
-	httpserver "github.com/i4de/rulex/plugin/http_server"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/plugin/http_server/model"
 
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/typex"
 )
 
-var _DataToUdp_luaCase = `function Main(arg) for i = 1, 3, 1 do local err = applib:DataToUdp('UdpServer',applib:T2J({temp = 20,humi = 13.45})) applib:log('result =>',err) applib:Sleep(100) end return 0 end`
+var _DataToUdp_luaCase = `function Main(arg) for i = 1, 3, 1 do local err = applib:DataToUdp('UdpServer',applib:T2J({temp = 20,humi = 13.45})) applib:log('result =>',err) time:Sleep(100) end return 0 end`
 
-// go test -timeout 30s -run ^Test_DataToUdp github.com/i4de/rulex/test -v -count=1
+// go test -timeout 30s -run ^Test_DataToUdp github.com/hootrhino/rulex/test -v -count=1
 
 func Test_DataToUdp(t *testing.T) {
 	RmUnitTestDbFile(t)
@@ -25,7 +26,7 @@ func Test_DataToUdp(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 
-	hh := httpserver.NewHttpApiServer()
+	hh := httpserver.NewHttpApiServer(engine)
 	// UdpApiServer loaded default
 	if err := engine.LoadPlugin("plugin.http_server", hh); err != nil {
 		t.Fatal(err)
@@ -40,7 +41,9 @@ func Test_DataToUdp(t *testing.T) {
 		},
 	)
 	UdpServer.UUID = "UdpServer"
-	if err := engine.LoadOutEnd(UdpServer); err != nil {
+	ctx1, cancelF1 := typex.NewCCTX() // ,ctx, cancelF
+
+	if err := engine.LoadOutEndWithCtx(UdpServer, ctx1, cancelF1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -99,8 +102,8 @@ func _createTestApp_1(t *testing.T) string {
 	}
 	t.Log("UT_createApp: ", string(output))
 	//
-	LoadDB()
-	mApp := []httpserver.MApp{}
+	LoadUnitTestDB()
+	mApp := []model.MApp{}
 	unitTestDB.Raw("SELECT * FROM m_apps").Find(&mApp)
 	assert.Equal(t, 1, len(mApp))
 	t.Log(mApp[0].UUID)
@@ -120,8 +123,8 @@ func _updateTestApp_1(t *testing.T, uuid string) {
 		t.Fatal(err)
 	}
 	t.Log("UT_updateApp: ", string(output))
-	LoadDB()
-	mApp := []httpserver.MApp{}
+	LoadUnitTestDB()
+	mApp := []model.MApp{}
 	unitTestDB.Raw("SELECT * FROM m_apps").Find(&mApp)
 	assert.Equal(t, 1, len(mApp))
 	t.Log("APP UUID ==> ", mApp[0].UUID)
@@ -140,8 +143,8 @@ func _deleteTestApp_1(t *testing.T, uuid string) {
 	}
 	t.Log("UT_deleteApp: ", string(output))
 	//
-	LoadDB()
-	mApp := []httpserver.MApp{}
+	LoadUnitTestDB()
+	mApp := []model.MApp{}
 	unitTestDB.Raw("SELECT * FROM m_apps").Find(&mApp)
 	assert.Equal(t, 0, len(mApp))
 }

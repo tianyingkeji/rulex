@@ -4,16 +4,15 @@ import (
 	"context"
 	"errors"
 	golog "log"
-	"os"
 	"sync"
 	"time"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/core"
-	"github.com/i4de/rulex/driver"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/core"
+	"github.com/hootrhino/rulex/driver"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 	"github.com/mitchellh/mapstructure"
 	modbus "github.com/wwhai/gomodbus"
 )
@@ -80,7 +79,7 @@ func (yk8 *YK8Controller) Start(cctx typex.CCTX) error {
 	yk8.rtuHandler.StopBits = yk8.rtuConfig.StopBits
 	yk8.rtuHandler.Timeout = time.Duration(yk8.mainConfig.Timeout) * time.Second
 	if core.GlobalConfig.AppDebugMode {
-		yk8.rtuHandler.Logger = golog.New(os.Stdout, "YK8-DEVICE: ", golog.LstdFlags)
+		yk8.rtuHandler.Logger = golog.New(glogger.GLogger.Writer(), "YK8-DEVICE: ", golog.LstdFlags)
 	}
 
 	if err := yk8.rtuHandler.Connect(); err != nil {
@@ -101,12 +100,13 @@ func (yk8 *YK8Controller) Start(cctx typex.CCTX) error {
 		buffer := make([]byte, common.T_64KB)
 		yk8.driver.Read([]byte{}, buffer) //清理缓存
 		for {
-			<-ticker.C
 			select {
 			case <-ctx.Done():
 				{
-					yk8.status = typex.DEV_STOP
 					ticker.Stop()
+					if yk8.rtuHandler != nil {
+						yk8.rtuHandler.Close()
+					}
 					return
 				}
 			default:
@@ -121,6 +121,8 @@ func (yk8 *YK8Controller) Start(cctx typex.CCTX) error {
 			} else {
 				yk8.RuleEngine.WorkDevice(yk8.Details(), string(buffer[:n]))
 			}
+			<-ticker.C
+
 		}
 
 	}(yk8.Ctx, yk8.driver)
@@ -151,12 +153,8 @@ func (yk8 *YK8Controller) Status() typex.DeviceState {
 
 // 停止设备
 func (yk8 *YK8Controller) Stop() {
-	yk8.status = typex.DEV_STOP
+	yk8.status = typex.DEV_DOWN
 	yk8.CancelCTX()
-	if yk8.rtuHandler != nil {
-		yk8.rtuHandler.Close()
-		yk8.rtuHandler = nil
-	}
 
 }
 

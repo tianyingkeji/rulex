@@ -3,11 +3,11 @@ package test
 import (
 	"time"
 
-	httpserver "github.com/i4de/rulex/plugin/http_server"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
 
 	"testing"
 
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/typex"
 )
 
 /*
@@ -20,13 +20,13 @@ func Test_tencent_iothub(t *testing.T) {
 	engine.Start()
 
 	// HttpApiServer loaded default
-	if err := engine.LoadPlugin("plugin.http_server", httpserver.NewHttpApiServer()); err != nil {
+	if err := engine.LoadPlugin("plugin.http_server", httpserver.NewHttpApiServer(engine)); err != nil {
 		t.Fatal("HttpServer load failed:", err)
 	}
 
 	// YK8 Inend
 	YK8Device := typex.NewDevice(typex.YK08_RELAY,
-		"继电器", "继电器", "", map[string]interface{}{
+		"继电器", "继电器", map[string]interface{}{
 			"timeout":   5,
 			"frequency": 5,
 			"config": map[string]interface{}{
@@ -47,11 +47,12 @@ func Test_tencent_iothub(t *testing.T) {
 			},
 		})
 	YK8Device.UUID = "YK8Device1"
-	if err := engine.LoadDevice(YK8Device); err != nil {
+	ctx, cancelF := typex.NewCCTX() // ,ctx, cancelF
+	if err := engine.LoadDeviceWithCtx(YK8Device, ctx, cancelF); err != nil {
 		t.Fatal("YK8Device load failed:", err)
 	}
 
-	tencentIothub := typex.NewInEnd(typex.TENCENT_IOT_HUB,
+	tencentIothub := typex.NewInEnd(typex.GENERIC_IOT_HUB,
 		"MQTT", "MQTT", map[string]interface{}{
 			"host":       "127.0.0.1",
 			"port":       1883,
@@ -62,8 +63,8 @@ func Test_tencent_iothub(t *testing.T) {
 			"deviceName": "RULEX-001",
 		})
 	tencentIothub.UUID = "tencentIothub"
-
-	if err := engine.LoadInEnd(tencentIothub); err != nil {
+	ctx1, cancelF1 := typex.NewCCTX() // ,ctx, cancelF
+	if err := engine.LoadInEndWithCtx(tencentIothub, ctx1, cancelF1); err != nil {
 		t.Fatal("mqttOutEnd load failed:", err)
 	}
 
@@ -76,7 +77,7 @@ func Test_tencent_iothub(t *testing.T) {
 		`function Success() print("[LUA Success Callback]=> OK") end`,
 		`
 		Actions = {
-		function(data)
+		function(args)
 		    print('From IotHUB:', data)
 			-- property
 		    iothub:PropertySuccess('tencentIothub', 'test-is-lua-001')
@@ -84,7 +85,7 @@ func Test_tencent_iothub(t *testing.T) {
 			-- action
 		    iothub:ActionSuccess('tencentIothub', 'test-is-lua-001', rulexlib:T2J({sw1=0}))
 		    iothub:ActionFailed('tencentIothub', 'test-is-lua-001', rulexlib:T2J({sw1=0}))
-			return true, data
+			return true, args
 		end
 	}
 `,

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
@@ -94,19 +94,16 @@ func (mm *mqttInEndSource) DataModels() []typex.XDataModel {
 
 func (mm *mqttInEndSource) Stop() {
 	mm.status = typex.SOURCE_STOP
-	mm.CancelCTX()
+	if mm.CancelCTX != nil {
+		mm.CancelCTX()
+	}
 	mm.client.Disconnect(0)
 	if mm.client != nil {
 		mm.client.Disconnect(0)
 		mm.client = nil
 	}
 }
-func (mm *mqttInEndSource) Reload() {
 
-}
-func (mm *mqttInEndSource) Pause() {
-
-}
 func (mm *mqttInEndSource) Status() typex.SourceState {
 	return mm.status
 }
@@ -118,17 +115,11 @@ func (mm *mqttInEndSource) Test(inEndId string) bool {
 	return false
 }
 
-func (mm *mqttInEndSource) Enabled() bool {
-	return mm.Enable
-}
 func (mm *mqttInEndSource) Details() *typex.InEnd {
 	return mm.RuleEngine.GetInEnd(mm.PointId)
 }
 func (*mqttInEndSource) Driver() typex.XExternalDriver {
 	return nil
-}
-func (*mqttInEndSource) Configs() *typex.XConfig {
-	return &typex.XConfig{}
 }
 
 // 拓扑

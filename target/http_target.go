@@ -1,12 +1,27 @@
+// Copyright (C) 2023 wwhai
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package target
 
 import (
 	"net/http"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 )
 
 type HTTPTarget struct {
@@ -43,18 +58,6 @@ func (ht *HTTPTarget) Start(cctx typex.CCTX) error {
 	return nil
 }
 
-func (ht *HTTPTarget) Test(outEndId string) bool {
-	return true
-}
-func (ht *HTTPTarget) Enabled() bool {
-	return ht.Enable
-}
-func (ht *HTTPTarget) Reload() {
-
-}
-func (ht *HTTPTarget) Pause() {
-
-}
 func (ht *HTTPTarget) Status() typex.SourceState {
 	return ht.status
 
@@ -72,11 +75,3 @@ func (ht *HTTPTarget) Details() *typex.OutEnd {
 	return ht.RuleEngine.GetOutEnd(ht.PointId)
 }
 
-/*
-*
-* 配置
-*
- */
-func (*HTTPTarget) Configs() *typex.XConfig {
-	return &typex.XConfig{}
-}

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -27,9 +27,7 @@ func NewHttpInEndSource(e typex.RuleX) typex.XSource {
 	h.RuleEngine = e
 	return &h
 }
-func (*httpInEndSource) Configs() *typex.XConfig {
-	return &typex.XConfig{}
-}
+
 func (hh *httpInEndSource) Init(inEndId string, configMap map[string]interface{}) error {
 	hh.PointId = inEndId
 	if err := utils.BindSourceConfig(configMap, &hh.mainConfig); err != nil {
@@ -80,14 +78,11 @@ func (mm *httpInEndSource) DataModels() []typex.XDataModel {
 
 func (hh *httpInEndSource) Stop() {
 	hh.status = typex.SOURCE_STOP
-	hh.CancelCTX()
+	if hh.CancelCTX != nil {
+		hh.CancelCTX()
+	}
 }
-func (hh *httpInEndSource) Reload() {
 
-}
-func (hh *httpInEndSource) Pause() {
-
-}
 func (hh *httpInEndSource) Status() typex.SourceState {
 	return hh.status
 }
@@ -96,9 +91,7 @@ func (hh *httpInEndSource) Test(inEndId string) bool {
 	return true
 }
 
-func (hh *httpInEndSource) Enabled() bool {
-	return hh.Enable
-}
+
 func (hh *httpInEndSource) Details() *typex.InEnd {
 	return hh.RuleEngine.GetInEnd(hh.PointId)
 }

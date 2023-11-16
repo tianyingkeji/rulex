@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	httpserver "github.com/i4de/rulex/plugin/http_server"
-	"github.com/i4de/rulex/typex"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/typex"
 )
 
 /*
@@ -18,13 +18,13 @@ func Test_g7776_Device(t *testing.T) {
 	engine.Start()
 
 	// HttpApiServer loaded default
-	if err := engine.LoadPlugin("plugin.http_server", httpserver.NewHttpApiServer()); err != nil {
+	if err := engine.LoadPlugin("plugin.http_server", httpserver.NewHttpApiServer(engine)); err != nil {
 		t.Fatal("HttpServer load failed:", err)
 	}
 
 	// YK8 Inend
 	GUART := typex.NewDevice(typex.USER_G776,
-		"UART", "UART", "UART", map[string]interface{}{
+		"UART", "UART", map[string]interface{}{
 			"baudRate":  9600,
 			"dataBits":  8,
 			"frequency": 5,
@@ -35,7 +35,8 @@ func Test_g7776_Device(t *testing.T) {
 			"uart":      "COM2",
 		})
 	GUART.UUID = "GUART1"
-	if err := engine.LoadDevice(GUART); err != nil {
+	ctx, cancelF := typex.NewCCTX()
+	if err := engine.LoadDeviceWithCtx(GUART, ctx, cancelF); err != nil {
 		t.Fatal("GUART load failed:", err)
 	}
 
@@ -48,11 +49,11 @@ func Test_g7776_Device(t *testing.T) {
 		`function Success() print("[LUA Success Callback]=> OK") end`,
 		`
 		Actions = {
-		function(data)
+		function(args)
 			print("received: ",data)
 			local n1, err = rulexlib:WriteDevice("GUART1", 0, "GUART1 data")
 			print("write size: ",n1, "error: ",err)
-			return true, data
+			return true, args
 		end
 	}
 `,

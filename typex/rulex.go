@@ -1,6 +1,7 @@
 package typex
 
 import (
+	"context"
 	"sync"
 )
 
@@ -19,13 +20,10 @@ type RulexConfig struct {
 	LogLevel              string `ini:"log_level" json:"logLevel"`
 	LogPath               string `ini:"log_path" json:"logPath"`
 	LuaLogPath            string `ini:"lua_log_path" json:"luaLogPath"`
-	RemoteLoggerIp        string `ini:"remote_logger_ip" json:"remoteLoggerIp"`
-	RemoteLoggerPort      int    `ini:"remote_logger_port" json:"remoteLoggerPort"`
-	RemoteLoggerSn        string `ini:"remote_logger_sn" json:"remoteLoggerSn"`
-	RemoteLoggerUid       string `ini:"remote_logger_uid" json:"remoteLoggerUid"`
 	MaxStoreSize          int    `ini:"max_store_size" json:"maxStoreSize"`
 	AppDebugMode          bool   `ini:"app_debug_mode" json:"appDebugMode"`
 	Extlibs               Extlib `ini:"extlibs,,allowshadow" json:"extlibs"`
+	UpdateServer          string `ini:"update_server" json:"updateServer"`
 }
 
 // RuleX interface
@@ -34,13 +32,7 @@ type RuleX interface {
 	// 启动规则引擎
 	//
 	Start() *RulexConfig
-	//
-	// 消息推到队列
-	//
-	PushQueue(QueueData) error
-	PushInQueue(in *InEnd, data string) error
-	PushOutQueue(out *OutEnd, data string) error
-	PushDeviceQueue(device *Device, data string) error
+
 	//
 	// 执行任务
 	//
@@ -53,7 +45,7 @@ type RuleX interface {
 	//
 	// 加载输入
 	//
-	LoadInEnd(*InEnd) error
+	LoadInEndWithCtx(in *InEnd, ctx context.Context, cancelCTX context.CancelFunc) error
 	//
 	// 获取输入
 	//
@@ -73,7 +65,7 @@ type RuleX interface {
 	//
 	// 加载输出
 	//
-	LoadOutEnd(*OutEnd) error
+	LoadOutEndWithCtx(in *OutEnd, ctx context.Context, cancelCTX context.CancelFunc) error
 	//
 	// 所有输出
 	//
@@ -143,7 +135,7 @@ type RuleX interface {
 	//
 	// 加载设备
 	//
-	LoadDevice(*Device) error
+	LoadDeviceWithCtx(in *Device, ctx context.Context, cancelCTX context.CancelFunc) error
 	//
 	// 获取设备
 	//
@@ -161,27 +153,6 @@ type RuleX interface {
 	//
 	RemoveDevice(string)
 	//
-	// 取一个进程
-	//
-	PickUpProcess(uuid string) *GoodsProcess
-
-	//
-	// 加载外部驱动
-	//
-	LoadGoods(goods Goods) error
-	//
-	// 删除外部驱动
-	//
-	RemoveGoods(uuid string) error
-	//
-	// 所有外部驱动
-	//
-	AllGoods() *sync.Map
-	//
-	// 获取某个外部驱动
-	//
-	GetGoods(uuid string) *Goods
-	//
 	// 重启源
 	//
 	RestartInEnd(uuid string) error
@@ -193,15 +164,6 @@ type RuleX interface {
 	// 重启设备
 	//
 	RestartDevice(uuid string) error
-	//----------------------------------------
-	// App
-	//----------------------------------------
-	AllApp() []*Application
-	LoadApp(*Application) error
-	GetApp(uuid string) *Application
-	StartApp(uuid string) error
-	StopApp(uuid string) error
-	RemoveApp(uuid string) error
 }
 
 // 拓扑接入点，比如 modbus 检测点等

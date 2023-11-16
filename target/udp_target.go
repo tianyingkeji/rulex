@@ -1,13 +1,28 @@
+// Copyright (C) 2023 wwhai
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package target
 
 import (
 	"net"
 	"net/http"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 )
 
 /*
@@ -49,18 +64,6 @@ func (udpt *UdpTarget) Start(cctx typex.CCTX) error {
 	return nil
 }
 
-func (udpt *UdpTarget) Test(outEndId string) bool {
-	return true
-}
-func (udpt *UdpTarget) Enabled() bool {
-	return udpt.Enable
-}
-func (udpt *UdpTarget) Reload() {
-
-}
-func (udpt *UdpTarget) Pause() {
-
-}
 func (udpt *UdpTarget) Status() typex.SourceState {
 	return udpt.status
 
@@ -91,13 +94,4 @@ func (udpt *UdpTarget) Stop() {
 }
 func (udpt *UdpTarget) Details() *typex.OutEnd {
 	return udpt.RuleEngine.GetOutEnd(udpt.PointId)
-}
-
-/*
-*
-* 配置
-*
- */
-func (*UdpTarget) Configs() *typex.XConfig {
-	return &typex.XConfig{}
 }

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	httpserver "github.com/i4de/rulex/plugin/http_server"
-	"github.com/i4de/rulex/rulexrpc"
-	"github.com/i4de/rulex/typex"
+	"github.com/hootrhino/rulex/component/rulexrpc"
+	httpserver "github.com/hootrhino/rulex/plugin/http_server"
+	"github.com/hootrhino/rulex/typex"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -24,7 +24,7 @@ func Test_data_to_tdengine(t *testing.T) {
 	engine := RunTestEngine()
 	engine.Start()
 
-	hh := httpserver.NewHttpApiServer()
+	hh := httpserver.NewHttpApiServer(engine)
 
 	// HttpApiServer loaded default
 	if err := engine.LoadPlugin("plugin.http_server", hh); err != nil {
@@ -38,8 +38,8 @@ func Test_data_to_tdengine(t *testing.T) {
 			"port": 2581,
 			"host": "127.0.0.1",
 		})
-
-	if err := engine.LoadInEnd(grpcInend); err != nil {
+	ctx, cancelF := typex.NewCCTX() // ,ctx, cancelF
+	if err := engine.LoadInEndWithCtx(grpcInend, ctx, cancelF); err != nil {
 		t.Fatal("grpcInend load failed:", err)
 	}
 
@@ -57,7 +57,8 @@ func Test_data_to_tdengine(t *testing.T) {
 			"insertSql":      "INSERT INTO meter01 VALUES (NOW, %v, %v, %v, %v);",
 		})
 	tdOutEnd.UUID = "TD1"
-	if err := engine.LoadOutEnd(tdOutEnd); err != nil {
+	ctx1, cancelF1 := typex.NewCCTX() // ,ctx, cancelF
+	if err := engine.LoadOutEndWithCtx(tdOutEnd, ctx1, cancelF1); err != nil {
 		t.Fatal(err)
 	}
 	//
@@ -65,10 +66,10 @@ func Test_data_to_tdengine(t *testing.T) {
 	//
 	callback :=
 		`Actions = {
-			function(data)
+			function(args)
 				local t = rulexlib:J2T(data)
-				local Result = rulexlib:DataToTdEngine('TD1', string.format("%d, %d, %d, %d", t['co2'], t['hum'], t['lex'], t['temp']))
-				print("rulexlib:DataToTdEngine Result", Result==nil)
+				local Result = data:ToTdEngine('TD1', string.format("%d, %d, %d, %d", t['co2'], t['hum'], t['lex'], t['temp']))
+				print("data:ToTdEngine Result", Result==nil)
 				return false, data
 			end
 		}`

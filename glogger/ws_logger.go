@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
-
 )
 
 var private_GRealtimeLogger *RealTimeLogger
@@ -26,6 +25,7 @@ func (hk wsLogHook) Levels() []logrus.Level {
 	return hk.levels
 }
 func (hk wsLogHook) Fire(e *logrus.Entry) error {
+	e.Data["ts"] = time.Now().UnixMicro()
 	msg, _ := e.String()
 	private_GRealtimeLogger.Write([]byte(msg))
 	return nil
@@ -66,11 +66,14 @@ func level(ss string) []logrus.Level {
 type RealTimeLogger struct {
 	WsServer websocket.Upgrader
 	Clients  map[string]*websocket.Conn
+	lock     sync.Mutex
 }
 
 func (w *RealTimeLogger) Write(p []byte) (n int, err error) {
 	for _, c := range w.Clients {
+		w.lock.Lock()
 		err := c.WriteMessage(websocket.TextMessage, p)
+		w.lock.Unlock()
 		if err != nil {
 			return 0, err
 		}
@@ -86,6 +89,7 @@ func StartNewRealTimeLogger(s string) *RealTimeLogger {
 			},
 		},
 		Clients: make(map[string]*websocket.Conn),
+		lock:    sync.Mutex{},
 	}
 	Logrus.AddHook(NewWSLogHook(s))
 	return private_GRealtimeLogger
@@ -118,18 +122,39 @@ func WsLogger(c *gin.Context) {
 		return
 	}
 	// 最多允许连接10个客户端，实际情况下根本用不了那么多
-	if len(private_GRealtimeLogger.Clients) >= 10 {
-		wsConn.WriteMessage(websocket.TextMessage, []byte("Reached max connections"))
+	if len(private_GRealtimeLogger.Clients) > 5 {
+		wsConn.WriteMessage(websocket.CloseMessage, []byte{})
 		wsConn.Close()
 		return
 	}
 	private_GRealtimeLogger.Clients[wsConn.RemoteAddr().String()] = wsConn
 	wsConn.WriteMessage(websocket.TextMessage, []byte("Connected"))
-	GLogger.Info("WebSocketTerminal connected:" + wsConn.RemoteAddr().String())
-	go func(ctx context.Context, wsConn *websocket.Conn) {
+	GLogger.Info("WebSocket Terminal connected:" + wsConn.RemoteAddr().String())
+	wsConn.SetCloseHandler(func(code int, text string) error {
+		GLogger.Info("wsConn Auto Close:", wsConn.RemoteAddr().String())
+		private_GRealtimeLogger.lock.Lock()
+		delete(private_GRealtimeLogger.Clients, wsConn.RemoteAddr().String())
+		private_GRealtimeLogger.lock.Unlock()
+		return nil
+	})
+	wsConn.SetPingHandler(func(appData string) error {
+		return nil
+	})
+	wsConn.SetPongHandler(func(appData string) error {
+		return nil
+	})
+	go func(wsConn *websocket.Conn) {
+		defer func() {
+			if wsConn != nil {
+				GLogger.Info("wsConn Disconnect By accident:", wsConn.RemoteAddr().String())
+				private_GRealtimeLogger.lock.Lock()
+				delete(private_GRealtimeLogger.Clients, wsConn.RemoteAddr().String())
+				private_GRealtimeLogger.lock.Unlock()
+			}
+		}()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-context.Background().Done():
 				{
 					return
 				}
@@ -137,21 +162,14 @@ func WsLogger(c *gin.Context) {
 				{
 				}
 			}
-			// 当前不需要相互交互，单向给Websocket发送日志就行
-			// 因此这里只需要判断下是否掉线即可
-
 			_, _, err := wsConn.ReadMessage()
-			// wsConn.WriteMessage(websocket.PingMessage, []byte{})
 			if err != nil {
-				wsConn.Close()
-				lock.Lock()
-				delete(private_GRealtimeLogger.Clients, wsConn.RemoteAddr().String())
-				lock.Unlock()
-				GLogger.Info("WebSocketTerminal disconnected:" + wsConn.RemoteAddr().String())
-				return
+				break
 			}
-
+			err = wsConn.WriteMessage(websocket.PingMessage, []byte{})
+			if err != nil {
+				break
+			}
 		}
-
-	}(context.Background(), wsConn)
+	}(wsConn)
 }

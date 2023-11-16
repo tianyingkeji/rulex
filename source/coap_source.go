@@ -5,10 +5,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 
 	"github.com/plgd-dev/go-coap/v2/message"
 	"github.com/plgd-dev/go-coap/v2/message/codes"
@@ -24,7 +24,7 @@ type coAPInEndSource struct {
 	status     typex.SourceState
 }
 
-func NewCoAPInEndSource(e typex.RuleX) *coAPInEndSource {
+func NewCoAPInEndSource(e typex.RuleX) typex.XSource {
 	c := coAPInEndSource{}
 	c.router = mux.NewRouter()
 	c.mainConfig = common.HostConfig{}
@@ -78,19 +78,15 @@ func (cc *coAPInEndSource) Start(cctx typex.CCTX) error {
 
 func (cc *coAPInEndSource) Stop() {
 	cc.status = typex.SOURCE_STOP
-	cc.CancelCTX()
-
+	if cc.CancelCTX != nil {
+		cc.CancelCTX()
+	}
 }
 
 func (cc *coAPInEndSource) DataModels() []typex.XDataModel {
 	return cc.XDataModels
 }
-func (cc *coAPInEndSource) Reload() {
 
-}
-func (cc *coAPInEndSource) Pause() {
-
-}
 func (cc *coAPInEndSource) Status() typex.SourceState {
 	return cc.status
 }
@@ -98,19 +94,13 @@ func (cc *coAPInEndSource) Status() typex.SourceState {
 func (cc *coAPInEndSource) Test(inEndId string) bool {
 	return true
 }
-func (cc *coAPInEndSource) Enabled() bool {
-	return true
-}
+
 func (cc *coAPInEndSource) Details() *typex.InEnd {
 	return cc.RuleEngine.GetInEnd(cc.PointId)
 }
 
 func (cc *coAPInEndSource) Driver() typex.XExternalDriver {
 	return nil
-}
-
-func (*coAPInEndSource) Configs() *typex.XConfig {
-	return &typex.XConfig{}
 }
 
 // 拓扑

@@ -1,13 +1,15 @@
 package ttyd_terminal
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 	"gopkg.in/ini.v1"
 )
 
@@ -26,11 +28,17 @@ type _ttydConfig struct {
 type WebTTYPlugin struct {
 	ttydCmd    *exec.Cmd
 	mainConfig _ttydConfig
+	uuid       string
+	busying    bool
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 func NewWebTTYPlugin() *WebTTYPlugin {
 	return &WebTTYPlugin{
-		mainConfig: _ttydConfig{},
+		uuid:       "WEB_TTYD_TERMINAL",
+		mainConfig: _ttydConfig{ListenPort: 7681},
+		busying:    false,
 	}
 }
 
@@ -46,10 +54,6 @@ func (tty *WebTTYPlugin) Init(config *ini.Section) error {
 	if err := utils.InIMapToStruct(config, &tty.mainConfig); err != nil {
 		return err
 	}
-	if tty.mainConfig.ListenPort == 0 {
-		tty.mainConfig.ListenPort = 7681
-	}
-
 	return nil
 }
 
@@ -59,49 +63,31 @@ func (tty *WebTTYPlugin) Init(config *ini.Section) error {
 *
  */
 func (tty *WebTTYPlugin) Start(typex.RuleX) error {
-	tty.ttydCmd = exec.CommandContext(typex.GCTX,
-		"ttyd", "-p", fmt.Sprintf("%d", tty.mainConfig.ListenPort),
-		"-o", "-6", "bash")
-	// tty.ttydCmd.Stdout = glogger.GLogger.Out
-	// tty.ttydCmd.Stderr = glogger.GLogger.Out
-	if err1 := tty.ttydCmd.Start(); err1 != nil {
-		glogger.GLogger.Info("cmd.Start error: %v", err1)
-		return err1
-	}
-	go func(cmd *exec.Cmd) {
-		glogger.GLogger.Info("ttyd started successfully on port:", tty.mainConfig.ListenPort)
-		cmd.Process.Wait() // blocked until exited
-		glogger.GLogger.Info("ttyd stopped")
-	}(tty.ttydCmd)
 	return nil
 }
 func (tty *WebTTYPlugin) Stop() error {
+	if tty.cancel != nil {
+		tty.cancel()
+	}
 	if tty.ttydCmd == nil {
 		return nil
 	}
 	if tty.ttydCmd.ProcessState != nil {
 		tty.ttydCmd.Process.Kill()
+		tty.ttydCmd.Process.Signal(os.Kill)
 	}
 	return nil
 }
 
 func (hh *WebTTYPlugin) PluginMetaInfo() typex.XPluginMetaInfo {
 	return typex.XPluginMetaInfo{
-		Name:     "WebTTYPlugin",
-		Version:  "0.0.1",
+		UUID:     hh.uuid,
+		Name:     "Web Terminal",
+		Version:  "v0.0.1",
 		Homepage: "https://github.com/tsl0922/ttyd",
 		HelpLink: "https://github.com/tsl0922/ttyd",
 		Author:   "wwhai",
 		Email:    "cnwwhai@gmail.com",
 		License:  "MIT",
 	}
-}
-
-/*
-*
-* 服务调用接口
-*
- */
-func (cs *WebTTYPlugin) Service(arg typex.ServiceArg) error {
-	return nil
 }

@@ -1,12 +1,27 @@
+// Copyright (C) 2023 wwhai
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package core
 
 import (
 	"errors"
 
-	"github.com/antonmedv/expr"
-	lua "github.com/i4de/gopher-lua"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
+	lua "github.com/hootrhino/gopher-lua"
+	"github.com/hootrhino/rulex/component/interpipeline"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
 )
 
 const (
@@ -17,23 +32,13 @@ const (
 
 // LUA Callback : Success
 func ExecuteSuccess(vm *lua.LState) (interface{}, error) {
-	return typex.Execute(vm, SUCCESS_KEY)
+	return interpipeline.Execute(vm, SUCCESS_KEY)
 }
 
 // LUA Callback : Failed
 
 func ExecuteFailed(vm *lua.LState, arg lua.LValue) (interface{}, error) {
-	return typex.Execute(vm, FAILED_KEY, arg)
-}
-
-/*
-*
-* Execute Expression
-* https://expr.medv.io/docs/Getting-Started
-*
- */
-func ExecuteExpression(rule *typex.Rule, env map[string]interface{}) (interface{}, error) {
-	return expr.Run(rule.ExprVM, env)
+	return interpipeline.Execute(vm, FAILED_KEY, arg)
 }
 
 /*
@@ -61,15 +66,15 @@ func ExecuteActions(rule *typex.Rule, arg lua.LValue) (lua.LValue, error) {
 			return nil, err
 		}
 		if rule.Status != typex.RULE_STOP {
-			return typex.RunPipline(rule.LuaVM, funcs, arg)
+			return interpipeline.RunPipline(rule.LuaVM, funcs, arg)
 		}
 		// if stopped, log warning information
 		glogger.GLogger.Warn("Rule has stopped:" + rule.UUID)
 		return lua.LNil, nil
 
-	} else {
-		return nil, errors.New("'Actions' not a lua table or not exist")
 	}
+	return nil, errors.New("'Actions' not a lua table or not exist")
+
 }
 
 // VerifyLuaSyntax Verify Lua Syntax
@@ -124,19 +129,5 @@ func VerifyLuaSyntax(r *typex.Rule) error {
 	r.LuaVM.DoString(r.Success)
 	r.LuaVM.DoString(r.Actions)
 	r.LuaVM.DoString(r.Failed)
-	return nil
-}
-
-/*
-*
-* 验证expr表达式的语法
-*
- */
-func VerifyExprSyntax(r *typex.Rule) error {
-	env := map[string]interface{}{}
-	_, err := expr.Compile(r.Expression, expr.Env(env))
-	if err != nil {
-		return err
-	}
 	return nil
 }

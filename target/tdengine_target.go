@@ -1,3 +1,18 @@
+// Copyright (C) 2023 wwhai
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package target
 
 import (
@@ -7,10 +22,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 )
 
 /*
@@ -57,11 +72,6 @@ func (td *tdEngineTarget) url() string {
 		td.mainConfig.Fqdn, td.mainConfig.Port, td.mainConfig.DbName)
 }
 
-// 测试资源是否可用
-func (td *tdEngineTarget) Test(inEndId string) bool {
-	return td.test()
-}
-
 //
 // 注册InEndID到资源
 //
@@ -98,28 +108,17 @@ func (td *tdEngineTarget) Start(cctx typex.CCTX) error {
 
 }
 
-// 资源是否被启用
-func (td *tdEngineTarget) Enabled() bool {
-	return true
-}
-
 // 数据模型, 用来描述该资源支持的数据, 对应的是云平台的物模型
 func (td *tdEngineTarget) DataModels() []typex.XDataModel {
 	return td.XDataModels
 }
 
-// 重载: 比如可以在重启的时候把某些数据保存起来
-func (td *tdEngineTarget) Reload() {
-
-}
-
-// 挂起资源, 用来做暂停资源使用
-func (td *tdEngineTarget) Pause() {
-}
-
 // 获取资源状态
 func (td *tdEngineTarget) Status() typex.SourceState {
-	return td.status
+	if td.test() {
+		return typex.SOURCE_UP
+	}
+	return typex.SOURCE_DOWN
 }
 
 // 获取资源绑定的的详情
@@ -203,23 +202,9 @@ func (td *tdEngineTarget) To(data interface{}) (interface{}, error) {
 	switch s := data.(type) {
 	case string:
 		{
-			ss := strings.Split(s, ",")
-			insertSql := td.mainConfig.InsertSql
-			for _, v := range ss {
-				insertSql = strings.Replace(insertSql, "%v", strings.TrimSpace(v), 1)
-			}
 			return execQuery(td.client, td.mainConfig.Username,
-				td.mainConfig.Password, insertSql, td.url()), nil
+				td.mainConfig.Password, s, td.url()), nil
 		}
 	}
 	return nil, nil
-}
-
-/*
-*
-* 配置
-*
- */
-func (*tdEngineTarget) Configs() *typex.XConfig {
-	return &typex.XConfig{}
 }

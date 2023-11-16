@@ -7,9 +7,9 @@ import (
 
 	"time"
 
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 
 	"github.com/thinkgos/go-iecp5/asdu"
 	"github.com/thinkgos/go-iecp5/cs104"
@@ -30,10 +30,11 @@ type cs104Server struct {
 	Host    string
 	Port    int
 	LogMode bool
+	uuid    string
 }
 
 func NewCs104Server() typex.XPlugin {
-	return &cs104Server{}
+	return &cs104Server{uuid: "CS104-SERVER"}
 }
 func (sf *cs104Server) InterrogationHandler(c asdu.Connect,
 	asduPack *asdu.ASDU, qoi asdu.QualifierOfInterrogation) error {
@@ -90,10 +91,11 @@ func (cs *cs104Server) Stop() error {
 
 func (cs *cs104Server) PluginMetaInfo() typex.XPluginMetaInfo {
 	return typex.XPluginMetaInfo{
+		UUID:     cs.uuid,
 		Name:     "IEC104 server Plugin",
-		Version:  "0.0.1",
-		Homepage: "www.github.com/i4de/rulex",
-		HelpLink: "www.github.com/i4de/rulex",
+		Version:  "v0.0.1",
+		Homepage: "https://hootrhino.github.io",
+		HelpLink: "https://hootrhino.github.io",
 		Author:   "wwhai",
 		Email:    "cnwwhai@gmail.com",
 		License:  "MIT",
@@ -105,6 +107,6 @@ func (cs *cs104Server) PluginMetaInfo() typex.XPluginMetaInfo {
 * 服务调用接口
 *
  */
-func (cs *cs104Server) Service(arg typex.ServiceArg) error {
-	return nil
+func (cs *cs104Server) Service(arg typex.ServiceArg) typex.ServiceResult {
+	return typex.ServiceResult{}
 }

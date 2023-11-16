@@ -6,16 +6,16 @@ import (
 	"time"
 
 	"github.com/gosnmp/gosnmp"
-	"github.com/i4de/rulex/common"
-	"github.com/i4de/rulex/driver"
-	"github.com/i4de/rulex/glogger"
-	"github.com/i4de/rulex/typex"
-	"github.com/i4de/rulex/utils"
+	"github.com/hootrhino/rulex/common"
+	"github.com/hootrhino/rulex/driver"
+	"github.com/hootrhino/rulex/glogger"
+	"github.com/hootrhino/rulex/typex"
+	"github.com/hootrhino/rulex/utils"
 )
 
 type _SNMPCommonConfig struct {
-	AutoRequest bool `json:"autoRequest" title:"启动轮询" info:""`
-	Frequency int64 `json:"frequency" validate:"required" title:"采集频率" info:""`
+	AutoRequest bool  `json:"autoRequest" title:"启动轮询"`
+	Frequency   int64 `json:"frequency" validate:"required" title:"采集频率"`
 }
 
 type _GSNMPConfig struct {
@@ -74,7 +74,7 @@ func (sd *genericSnmpDevice) Start(cctx typex.CCTX) error {
 	}
 	err := client.Connect()
 	if err != nil {
-		glogger.GLogger.Error("Connect err: %v", err)
+		glogger.GLogger.Errorf("Connect err: %v", err)
 		return err
 	}
 
@@ -141,7 +141,9 @@ func (sd *genericSnmpDevice) Status() typex.DeviceState {
 // 停止设备
 func (sd *genericSnmpDevice) Stop() {
 	sd.status = typex.DEV_STOP
-	sd.CancelCTX()
+	if sd.CancelCTX != nil {
+		sd.CancelCTX()
+	}
 }
 
 // 设备属性，是一系列属性描述

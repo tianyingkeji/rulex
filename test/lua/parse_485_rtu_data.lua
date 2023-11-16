@@ -19,7 +19,7 @@ function Failed(error)
 end
 
 -- Actions
-Actions = {function(data)
+Actions = {function(args)
     for _, v in pairs(rulexlib:J2T(data)) do
         local ts = rulexlib:TsUnixNano()
         local jsont = {
@@ -28,7 +28,7 @@ Actions = {function(data)
             timestamp = ts,
             params = v['value']
         }
-        rulexlib:DataToMqtt('mqttOutEnd', rulexlib:T2J(jsont))
+        data:ToMqtt('mqttOutEnd', rulexlib:T2J(jsont))
     end
-    return true, data
+    return true, args
 end}
